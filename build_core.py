@@ -546,6 +546,8 @@ function filtered(){
   return PROJECT_DATA.filter(p=>{
     if(portfolioFilter==='managed'&&p.mp!=='Yes') return false;
     if(responsibleFilter!=='All'&&p.resp!==responsibleFilter) return false;
+    // Exclude blank-customer Regulated Industries records with zero Contract Value
+    if(!p.cust && p.bk==='Regulated Industries' && p.cbr===0) return false;
     return true;
   });
 }
