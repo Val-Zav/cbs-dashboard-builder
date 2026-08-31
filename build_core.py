@@ -383,7 +383,14 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
         <div class="cc"><h3>Orange Leakage Revenue by Contract Type</h3><div class="cw h200"><canvas id="leakOrangeBTChart"></canvas></div></div>
       </div>
     </div>
-    <div class="cc g1"><h3>Critical &amp; Warning Projects (Red &amp; Orange)</h3>
+    <div class="cc g1">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <h3 style="margin:0">Critical &amp; Warning Projects (Red &amp; Orange)</h3>
+        <div style="display:flex;gap:8px">
+          <a href="https://sap.sharepoint.com/:x:/r/teams/NAFieldOpsRegionalSharedServiceTeam/Shared%20Documents/General/Backlog%20Leakage%20by%20Sales%20Order%20CBS%20.xlsx?d=wa8fd1eff5bd447619511887b481b28c5&csf=1&web=1&e=Q1JZgM" target="_blank" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;font-size:11px;font-weight:600;background:#0070F2;color:#fff;border-radius:4px;text-decoration:none;white-space:nowrap">&#8599; Check report by SO</a>
+          <a href="https://sap.sharepoint.com/:x:/r/teams/NAFieldOpsRegionalSharedServiceTeam/Shared%20Documents/General/Consolidated%20Leakage%20T%26M%20Report%20by%20Line%20Item%20.xlsx?d=w5c5b225319a74217a508528b93336c8d&csf=1&web=1&e=Fg0E7U" target="_blank" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;font-size:11px;font-weight:600;background:#0070F2;color:#fff;border-radius:4px;text-decoration:none;white-space:nowrap">&#8599; Check report by SO Item</a>
+        </div>
+      </div>
       <div class="tbl-outer"><table id="leakTable"><thead><tr>
         <th class="sortable-th" onclick="sortLeakTable('id',this)" style="cursor:pointer;user-select:none">Project <span class="sort-arrow" id="sa-id">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('desc',this)" style="cursor:pointer;user-select:none">Description <span class="sort-arrow" id="sa-desc">&#8597;</span></th>
@@ -391,6 +398,8 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
         <th class="sortable-th" onclick="sortLeakTable('resp',this)" style="cursor:pointer;user-select:none">CBS Responsible <span class="sort-arrow" id="sa-resp">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('ct',this)" style="cursor:pointer;user-select:none">Contract Type <span class="sort-arrow" id="sa-ct">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('ls',this)" style="cursor:pointer;user-select:none">Status <span class="sort-arrow" id="sa-ls">&#8597;</span></th>
+        <th class="sortable-th" onclick="sortLeakTable('cnv',this)" style="cursor:pointer;user-select:none">Contract Net Value <span class="sort-arrow" id="sa-cnv">&#8597;</span></th>
+        <th class="sortable-th" onclick="sortLeakTable('anv',this)" style="cursor:pointer;user-select:none">Adjusted Net Value <span class="sort-arrow" id="sa-anv">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('lv',this)" style="cursor:pointer;user-select:none">Total Leakage <span class="sort-arrow" id="sa-lv">&#8595;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('lkpct',this)" style="cursor:pointer;user-select:none">Leakage % <span class="sort-arrow" id="sa-lkpct">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('ir',this)" style="cursor:pointer;user-select:none">Red Items <span class="sort-arrow" id="sa-ir">&#8597;</span></th>
@@ -451,7 +460,11 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
     <div class="cc"><h3>Recidivism Distribution <span style="font-size:11px;font-weight:400;color:#8396A8">(excl. Not Fixable)</span></h3><div class="cw h380"><canvas id="recidDistChart"></canvas></div></div>
   </div>
 
-  <div class="cc g1"><h3>Red Projects — Current Week Detail</h3>
+  <div class="cc g1">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <h3 style="margin:0">Red Projects — Current Week Detail</h3>
+      <a href="https://sap.sharepoint.com/:x:/t/NAFieldOpsRegionalSharedServiceTeam/IQDrgdxUM1MzTad5sCaj692qAQM0bpf_3eKOCISLMJDFCOw" target="_blank" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;font-size:11px;font-weight:600;background:#BB0000;color:#fff;border-radius:4px;text-decoration:none;white-space:nowrap">&#8599; Check Analysis Report</a>
+    </div>
     <div class="tbl-outer"><table id="recidTable"><thead><tr>
       <th class="sortable-th" onclick="sortRecidTable('id',this)" style="cursor:pointer;user-select:none">Project <span class="sort-arrow" id="rsa-id">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('cust',this)" style="cursor:pointer;user-select:none">Customer <span class="sort-arrow" id="rsa-cust">&#8597;</span></th>
@@ -1150,6 +1163,8 @@ function updateLA(data){
       <td>${p.resp}</td>
       <td><span class="badge" style="background:${ctBg[p.ct]||'#8396A8'}">${p.ct}</span></td>
       <td><span class="badge" style="background:${lsBg2[p.ls]}">${p.ls}</span></td>
+      <td style="text-align:right;color:#1D2D3E">${fmtUSD(p.cnv)}</td>
+      <td style="text-align:right;color:#1D2D3E">${fmtUSD(p.anv)}</td>
       <td style="text-align:right;color:${p.lv>0?'#BB0000':'#107F3E'}">${fmtUSD(p.lv)}</td>
       <td style="text-align:right;color:${pctColor};font-weight:600">${pct}</td>
       <td style="text-align:center">${p.ir}</td>
