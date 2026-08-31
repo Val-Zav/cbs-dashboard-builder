@@ -327,7 +327,7 @@ if st.session_state.get("build_ok") and "html_full" in st.session_state:
         st.download_button(
             label="Download — wo Personal Data",
             data=b_public,
-            file_name="CBS_Portfolio_Dashboard_wo_Personal_Data.html",
+            file_name="CBS_Dashboard_Public.html",
             mime="text/html",
             use_container_width=True,
         )
