@@ -1622,19 +1622,19 @@ def _strip_personal(html: str) -> str:
     # 1. Browser tab title
     html = html.replace(
         '<title>CBS Portfolio Dashboard</title>',
-        '<title>CBS Portfolio Dashboard - wo Personal Data</title>'
+        '<title>CBS Dashboard Public</title>'
     )
 
     # 2. Header h1
     html = html.replace(
         '<h1>CBS Portfolio Dashboard</h1>',
-        '<h1>CBS Portfolio Dashboard<br><span style="font-size:0.75rem;font-weight:300;opacity:0.85">wo Personal Data</span></h1>'
+        '<h1>CBS Dashboard Public<br><span style="font-size:0.75rem;font-weight:300;opacity:0.85">No Personal Data</span></h1>'
     )
 
     # 3. Intro banner title (Tab 1)
     html = html.replace(
         'CBS Portfolio Dashboard &mdash; North America',
-        'CBS Portfolio Dashboard - wo Personal Data &mdash; North America'
+        'CBS Dashboard Public &mdash; North America'
     )
 
     # 4. Remove CBS Responsible filter from header (label + select)
