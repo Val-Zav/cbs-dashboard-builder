@@ -197,7 +197,7 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
       <button class="toggle-btn active" onclick="setPortfolio('all',this)">Total Portfolio</button>
       <button class="toggle-btn"        onclick="setPortfolio('managed',this)">Managed Portfolio</button>
     </div>
-    <span class="ctrl-label">CBS Responsible</span>
+    <span class="ctrl-label">Project Responsible</span>
     <select id="respSel" onchange="setResponsible(this.value)"><option value="All">All</option></select>
   </div>
 </header>
@@ -357,7 +357,7 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
       <div class="tl tl-r"><div class="tl-lbl">Red — Reduce Forecasts</div><div class="tl-val" id="tl-r-n">—</div><div class="tl-sub" id="tl-r-s"></div></div>
       <div class="tl tl-o"><div class="tl-lbl">Orange — Additional Forecasting</div><div class="tl-val" id="tl-o-n">—</div><div class="tl-sub" id="tl-o-s"></div></div>
       <div class="tl tl-g"><div class="tl-lbl">Green — No Action Needed</div><div class="tl-val" id="tl-g-n">—</div><div class="tl-sub" id="tl-g-s"></div></div>
-      <div class="tl tl-b"><div class="tl-lbl">Total Positive Leakage</div><div class="tl-val" id="tl-lv" style="font-size:19px">—</div><div class="tl-sub">Revenue at risk</div></div>
+      <div class="tl tl-r"><div class="tl-lbl">Total Positive Leakage</div><div class="tl-val" id="tl-lv" style="font-size:19px">—</div><div class="tl-sub">Revenue at risk</div></div>
     </div>
 
     <!-- JOULE LEAKAGE INSIGHTS -->
@@ -395,7 +395,7 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
         <th class="sortable-th" onclick="sortLeakTable('id',this)" style="cursor:pointer;user-select:none">Project <span class="sort-arrow" id="sa-id">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('desc',this)" style="cursor:pointer;user-select:none">Description <span class="sort-arrow" id="sa-desc">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('bk',this)" style="cursor:pointer;user-select:none">Bucket <span class="sort-arrow" id="sa-bk">&#8597;</span></th>
-        <th class="sortable-th" onclick="sortLeakTable('resp',this)" style="cursor:pointer;user-select:none">CBS Responsible <span class="sort-arrow" id="sa-resp">&#8597;</span></th>
+        <th class="sortable-th" onclick="sortLeakTable('resp',this)" style="cursor:pointer;user-select:none">Project Responsible <span class="sort-arrow" id="sa-resp">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('ct',this)" style="cursor:pointer;user-select:none">Contract Type <span class="sort-arrow" id="sa-ct">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('ls',this)" style="cursor:pointer;user-select:none">Status <span class="sort-arrow" id="sa-ls">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('cnv',this)" style="cursor:pointer;user-select:none">Contract Net Value <span class="sort-arrow" id="sa-cnv">&#8597;</span></th>
@@ -469,7 +469,7 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
       <th class="sortable-th" onclick="sortRecidTable('id',this)" style="cursor:pointer;user-select:none">Project <span class="sort-arrow" id="rsa-id">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('cust',this)" style="cursor:pointer;user-select:none">Customer <span class="sort-arrow" id="rsa-cust">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('bk',this)" style="cursor:pointer;user-select:none">Bucket <span class="sort-arrow" id="rsa-bk">&#8597;</span></th>
-      <th class="sortable-th" onclick="sortRecidTable('resp',this)" style="cursor:pointer;user-select:none">CBS Responsible <span class="sort-arrow" id="rsa-resp">&#8597;</span></th>
+      <th class="sortable-th" onclick="sortRecidTable('resp',this)" style="cursor:pointer;user-select:none">Project Responsible <span class="sort-arrow" id="rsa-resp">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('sopm',this)" style="cursor:pointer;user-select:none">SO PM <span class="sort-arrow" id="rsa-sopm">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('st',this)" style="cursor:pointer;user-select:none">Overall Status <span class="sort-arrow" id="rsa-st">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('fix',this)" style="cursor:pointer;user-select:none">Fix Status <span class="sort-arrow" id="rsa-fix">&#8597;</span></th>
@@ -1355,7 +1355,7 @@ function generateJouleRR(data,rr,latestWk,lwData){
 
 // ── INIT ──────────────────────────────────────────────────────────────────
 (function init(){
-  // Populate CBS Responsible dropdown
+  // Populate Project Responsible dropdown
   const sel=document.getElementById('respSel');
   RESP_LIST.forEach(r=>{if(r==='All')return;const o=document.createElement('option');o.value=r;o.textContent=r;sel.appendChild(o);});
   // Populate RR bucket filter buttons
@@ -1639,7 +1639,7 @@ def _strip_personal(html: str) -> str:
 
     # 4. Remove CBS Responsible filter from header (label + select)
     html = html.replace(
-        '<span class="ctrl-label">CBS Responsible</span>\n    <select id="respSel" onchange="setResponsible(this.value)"><option value="All">All</option></select>',
+        '<span class="ctrl-label">Project Responsible</span>\n    <select id="respSel" onchange="setResponsible(this.value)"><option value="All">All</option></select>',
         ''
     )
 
@@ -1651,7 +1651,7 @@ def _strip_personal(html: str) -> str:
 
     # 5. Leakage table — remove CBS Responsible <th>
     html = html.replace(
-        '\n        <th class="sortable-th" onclick="sortLeakTable(\'resp\',this)" style="cursor:pointer;user-select:none">CBS Responsible <span class="sort-arrow" id="sa-resp">&#8597;</span></th>',
+        '\n        <th class="sortable-th" onclick="sortLeakTable(\'resp\',this)" style="cursor:pointer;user-select:none">Project Responsible <span class="sort-arrow" id="sa-resp">&#8597;</span></th>',
         ''
     )
 
@@ -1663,7 +1663,7 @@ def _strip_personal(html: str) -> str:
 
     # 7. Red Report table — remove CBS Responsible <th>
     html = html.replace(
-        '\n      <th class="sortable-th" onclick="sortRecidTable(\'resp\',this)" style="cursor:pointer;user-select:none">CBS Responsible <span class="sort-arrow" id="rsa-resp">&#8597;</span></th>',
+        '\n      <th class="sortable-th" onclick="sortRecidTable(\'resp\',this)" style="cursor:pointer;user-select:none">Project Responsible <span class="sort-arrow" id="rsa-resp">&#8597;</span></th>',
         ''
     )
 
