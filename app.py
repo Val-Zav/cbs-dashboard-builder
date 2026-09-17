@@ -1,25 +1,29 @@
 """
-CBS Portfolio Dashboard Builder
-Streamlit web app — upload 4 Excel files, download the HTML dashboard.
+CBS Portfolio Tools -- Unified Streamlit App
+Two tools, one interface:
+  - Tab 1 -- CBS Portfolio Dashboard  (build_core.py)
+  - Tab 2 -- CBS Oversight Tracker    (build_tracker_core.py)
+
+Both tools accept the same four source Excel files.
 """
 
 import io
-import base64
-import tempfile
 import os
 import sys
+import tempfile
+import datetime
 import streamlit as st
 
-# ── Page config (must be first Streamlit call) ────────────────────────────────
+# -- Page config (must be the first Streamlit call) -----------------------------
 st.set_page_config(
-    page_title="CBS Portfolio Dashboard Builder",
-    page_icon="📊",
+    page_title="CBS Portfolio Tools",
+    page_icon=":bar_chart:",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
 
-# ── SAP SVG logo (inline) ─────────────────────────────────────────────────────
-SAP_SVG = """<svg version="1.1" xmlns="http://www.w3.org/2000/svg"
+# -- SAP logo (inline SVG) ------------------------------------------------------
+_SAP_SVG = """<svg version="1.1" xmlns="http://www.w3.org/2000/svg"
   xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 412.4 204"
   style="height:40px;display:inline-block;vertical-align:middle;">
 <defs>
@@ -33,157 +37,163 @@ SAP_SVG = """<svg version="1.1" xmlns="http://www.w3.org/2000/svg"
     <stop offset="1"    stop-color="#1E5FBB"/>
   </linearGradient>
 </defs>
-<polyline fill="url(#sg)" points="0,204 208.4,204 412.4,0 0,0 0,204"/>
-<path fill="#FFFFFF" d="M244.7,38.4h-40.6v96.5l-35.5-96.6h-35.2l-30.3,80.7
-  C100,98.7,79,91.7,62.4,86.4C51.5,82.9,39.8,77.7,40,72c0.1-4.7,6.2-9,18.4-8.4
-  c8.2,0.4,15.4,1.1,29.7,8l14.1-24.5c-13.1-6.6-31.2-10.9-46-10.9h-0.1
-  c-17.3,0-31.7,5.6-40.6,14.8C9,57.2,5.5,65.7,5.5,74.7C5.5,87.2,10.1,96,19.7,103
-  c8.1,5.9,18.5,9.8,27.6,12.6c11.3,3.5,20.5,6.5,20.4,13c-0.1,2.4-1,4.7-2.7,6.4
-  c-2.8,2.9-7.1,4-13.1,4.1c-11.5,0.2-20-1.6-33.6-9.6L5.8,154.4
-  c14,8,29.9,12.2,46,12.2h2.1c14.2-0.2,25.7-4.3,34.9-11.7c0.5-0.4,1-0.8,1.5-1.3
-  l-4.1,10.9H123l6.2-18.8c7,2.3,14.3,3.5,21.7,3.4c7.2,0,14.3-1.1,21.2-3.2
-  l6,18.6h60.1v-39h13.1c31.7,0,50.5-16.2,50.5-43.2C301.7,52.2,283.5,38.4,244.7,38.4z
-  M150.9,121c-4.4,0-8.8-0.7-13-2.3l12.9-40.6h0.2l12.6,40.7
-  C159.6,120.3,155.2,121,150.9,121z M247.1,97.7h-8.9V64.9h8.9
-  c11.9,0,21.4,4,21.4,16.1C268.5,93.7,259,97.6,247.1,97.7"/>
+<polyline style="fill-rule:evenodd;clip-rule:evenodd;fill:url(#sg)"
+  points="0,204 208.4,204 412.4,0 0,0 0,204"/>
+<path style="fill-rule:evenodd;clip-rule:evenodd;fill:#FFFFFF"
+  d="M244.7,38.4h-40.6v96.5l-35.5-96.6h-35.2l-30.3,80.7C100,98.7,79,91.7,62.4,86.4
+  C51.5,82.9,39.8,77.7,40,72c0.1-4.7,6.2-9,18.4-8.4c8.2,0.4,15.4,1.1,29.7,8l14.1-24.5
+  c-13.1-6.6-31.2-10.9-46-10.9h-0.1c-17.3,0-31.7,5.6-40.6,14.8c-6.2,6.3-9.7,14.8-9.7,23.7
+  C5.5,87.2,10.1,96,19.7,103c8.1,5.9,18.5,9.8,27.6,12.6c11.3,3.5,20.5,6.5,20.4,13
+  c-0.1,2.4-1,4.7-2.7,6.4c-2.8,2.9-7.1,4-13.1,4.1c-11.5,0.2-20-1.6-33.6-9.6L5.8,154.4
+  c14,8,29.9,12.2,46,12.2h2.1c14.2-0.2,25.7-4.3,34.9-11.7c0.5-0.4,1-0.8,1.5-1.3l-4.1,10.9
+  H123l6.2-18.8c7,2.3,14.3,3.5,21.7,3.4c7.2,0,14.3-1.1,21.2-3.2l6,18.6h60.1v-39h13.1
+  c31.7,0,50.5-16.2,50.5-43.2C301.7,52.2,283.5,38.4,244.7,38.4z
+  M150.9,121c-4.4,0-8.8-0.7-13-2.3l12.9-40.6h0.2l12.6,40.7C159.6,120.3,155.2,121,150.9,121z
+  M247.1,97.7h-8.9V64.9h8.9c11.9,0,21.4,4,21.4,16.1C268.5,93.7,259,97.6,247.1,97.7"/>
 </svg>"""
 
-# ── Global styles ─────────────────────────────────────────────────────────────
+# -- Global CSS -----------------------------------------------------------------
 st.markdown("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
   html, body, [class*="css"] {
-    font-family: 'IBM Plex Sans', '72', Arial, sans-serif;
+    font-family: '72 Brand', '72', 'IBM Plex Sans', Arial, sans-serif;
   }
 
-  /* Remove default Streamlit top padding */
-  .block-container { padding-top: 0 !important; max-width: 780px; }
-
-  /* Header bar */
+  /* Header */
   .sap-header {
-    background: linear-gradient(135deg, #0070F2 0%, #0040B0 100%);
-    padding: 24px 32px 20px 32px;
-    margin: -1rem -1rem 0 -1rem;
-    border-radius: 0;
+    background: linear-gradient(135deg, #0057B8 0%, #0070F2 60%, #4CB1FF 100%);
+    border-radius: 10px;
+    padding: 22px 28px;
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: 20px;
+    margin-bottom: 8px;
   }
-  .sap-header-text { color: #ffffff; }
   .sap-header-text h1 {
-    margin: 0; font-size: 1.35rem; font-weight: 600; letter-spacing: -0.01em;
+    color: #fff;
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin: 0 0 4px 0;
   }
   .sap-header-text p {
-    margin: 2px 0 0 0; font-size: 0.82rem; opacity: 0.85; font-weight: 300;
+    color: rgba(255,255,255,0.82);
+    font-size: 0.82rem;
+    margin: 0;
   }
 
-  /* Section card */
+  /* Upload card */
   .upload-card {
-    background: #F5F6F7;
-    border: 1px solid #EAECEE;
-    border-radius: 10px;
-    padding: 20px 24px;
-    margin: 18px 0 8px 0;
+    background: #F5F6F8;
+    border: 1px solid #E1E2E6;
+    border-radius: 8px;
+    padding: 14px 18px 4px;
+    margin-bottom: 4px;
   }
-  .upload-card h3 {
-    margin: 0 0 4px 0; font-size: 0.95rem; font-weight: 600; color: #32363A;
-  }
-  .upload-card p {
-    margin: 0 0 14px 0; font-size: 0.8rem; color: #6A6D70;
-  }
+  .upload-card h3 { font-size: 0.95rem; font-weight: 600; color: #1D2329; margin-bottom: 4px; }
+  .upload-card p  { font-size: 0.8rem; color: #89919A; margin: 0; }
 
-  /* File status badges */
-  .badge-ok   { color: #107E3E; font-weight: 600; font-size: 0.82rem; }
-  .badge-miss { color: #BB0000; font-size: 0.82rem; }
+  /* Status badges */
+  .badge-ok   { background: #E6F4EA; color: #107E3E; padding: 3px 10px;
+                border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
+  .badge-miss { background: #F5F6F8; color: #89919A; padding: 3px 10px;
+                border-radius: 12px; font-size: 0.78rem; font-weight: 600; }
 
-  /* Build button styling override */
+  /* Build button */
   div[data-testid="stButton"] > button {
-    background: #0070F2;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 1rem;
-    font-weight: 600;
-    padding: 0.6rem 2.4rem;
-    width: 100%;
-    cursor: pointer;
+    background: #0070F2; color: white; border: none;
+    border-radius: 6px; font-size: 1rem; font-weight: 600;
+    padding: 0.6rem 2.4rem; width: 100%; cursor: pointer;
     transition: background 0.15s;
   }
-  div[data-testid="stButton"] > button:hover {
-    background: #0040B0;
-  }
-  div[data-testid="stButton"] > button:disabled {
-    background: #EAECEE;
-    color: #89919A;
-    cursor: not-allowed;
-  }
+  div[data-testid="stButton"] > button:hover   { background: #0040B0; }
+  div[data-testid="stButton"] > button:disabled { background: #EAECEE; color: #89919A; cursor: not-allowed; }
 
   /* Download button */
   div[data-testid="stDownloadButton"] > button {
-    background: #107E3E;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 1rem;
-    font-weight: 600;
-    padding: 0.6rem 2.4rem;
-    width: 100%;
+    background: #107E3E; color: white; border: none;
+    border-radius: 6px; font-size: 1rem; font-weight: 600;
+    padding: 0.6rem 2.4rem; width: 100%;
   }
-  div[data-testid="stDownloadButton"] > button:hover {
-    background: #0B5C2C;
-  }
+  div[data-testid="stDownloadButton"] > button:hover { background: #0B5C2C; }
 
-  /* Success / error boxes */
-  .result-ok {
-    background: #F1FAF5; border: 1px solid #107E3E; border-radius: 8px;
-    padding: 14px 20px; color: #0B5C2C; font-weight: 500; font-size: 0.9rem;
-  }
-  .result-err {
-    background: #FFF3F3; border: 1px solid #BB0000; border-radius: 8px;
-    padding: 14px 20px; color: #8B0000; font-weight: 500; font-size: 0.9rem;
-  }
+  /* Result boxes */
+  .result-ok  { background: #F1FAF5; border: 1px solid #107E3E; border-radius: 8px;
+                padding: 14px 20px; color: #0B5C2C; font-weight: 500; font-size: 0.9rem; }
+  .result-err { background: #FFF3F3; border: 1px solid #BB0000; border-radius: 8px;
+                padding: 14px 20px; color: #8B0000; font-weight: 500; font-size: 0.9rem; }
+
+  /* Tabs */
+  button[data-baseweb="tab"] { font-size: 0.9rem; font-weight: 600; }
 
   /* Footer */
   .sap-footer {
-    margin-top: 32px; padding-top: 16px; border-top: 1px solid #EAECEE;
+    margin-top: 32px; padding-top: 16px;
+    border-top: 1px solid #EAECEE;
     text-align: center; font-size: 0.75rem; color: #89919A;
   }
 
-  /* Hide Streamlit branding */
+  /* Hide Streamlit chrome */
   #MainMenu, footer { visibility: hidden; }
   header[data-testid="stHeader"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Header ─────────────────────────────────────────────────────────────────────
+# -- Header ---------------------------------------------------------------------
 st.markdown(f"""
 <div class="sap-header">
-  {SAP_SVG}
+  {_SAP_SVG}
   <div class="sap-header-text">
-    <h1>CBS Portfolio Dashboard Builder</h1>
-    <p>Upload the four source Excel files to generate the interactive HTML dashboard.</p>
+    <h1>CBS Portfolio Tools</h1>
+    <p>Upload the four source Excel files to generate the interactive HTML reports.</p>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── Instructions ──────────────────────────────────────────────────────────────
-with st.expander("How to use this tool", expanded=False):
-    st.markdown("""
+# -- Helper: file status row ----------------------------------------------------
+def _status_row(files: dict):
+    if not any(files.values()):
+        return
+    parts = []
+    for label, f in files.items():
+        if f:
+            parts.append(f'<span class="badge-ok">&#10003; {label}</span>')
+        else:
+            parts.append(f'<span class="badge-miss">&#9711; {label}</span>')
+    st.markdown(
+        "<div style='margin:8px 0 12px 0; display:flex; flex-wrap:wrap; gap:10px;'>"
+        + "  ".join(parts)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# ===============================================================================
+# TABS
+# ===============================================================================
+tab_dash, tab_track = st.tabs(["CBS Portfolio Dashboard", "CBS Oversight Tracker"])
+
+
+# +===========================================================================+
+# |  TAB 1 -- CBS PORTFOLIO DASHBOARD                                         |
+# +===========================================================================+
+with tab_dash:
+
+    with st.expander("How to use -- Portfolio Dashboard", expanded=False):
+        st.markdown("""
 **Three steps:**
 
-1. Upload the four Excel files below — drag and drop or click to browse.
+1. Upload the four Excel files below.
 2. Click **Build Dashboard**.
-3. Download both files — the full version with all data, and the public version without personal information (CBS Responsible, SO PM).
+3. Download the full version and the public version (without personal data).
 
-The dashboards are self-contained HTML files — anyone can open them in a browser with no login required.
+The dashboards are self-contained HTML files that anyone can open in a browser.
 
 ---
-**Required files**
-
-| File | What it contains |
+| File | Contents |
 |---|---|
 | `Services_Integrated_Project_Fi.xlsx` | Project financials, margins, EAC |
 | `MANDI.xlsx` | Delivery status and LoS data |
@@ -191,149 +201,272 @@ The dashboards are self-contained HTML files — anyone can open them in a brows
 | `Leakage Report.xlsx` | Leakage and billing type data |
 """)
 
-# ── File uploaders ─────────────────────────────────────────────────────────────
-st.markdown('<div class="upload-card"><h3>Source Files</h3><p>All four files are required.</p></div>',
-            unsafe_allow_html=True)
+    st.markdown('<div class="upload-card"><h3>Source Files</h3><p>All four files are required.</p></div>',
+                unsafe_allow_html=True)
 
-col1, col2 = st.columns(2)
+    d_col1, d_col2 = st.columns(2)
+    with d_col1:
+        d_si  = st.file_uploader("Services Integrated",    type=["xlsx"], key="d_si",  help="Services_Integrated_Project_Fi.xlsx")
+        d_red = st.file_uploader("Red Project Data Base",  type=["xlsx"], key="d_red", help="Red Project Data Base.xlsx")
+    with d_col2:
+        d_ma  = st.file_uploader("MANDI",                  type=["xlsx"], key="d_ma",  help="MANDI.xlsx")
+        d_lk  = st.file_uploader("Leakage Report",         type=["xlsx"], key="d_lk",  help="Leakage Report.xlsx")
 
-with col1:
-    f_si = st.file_uploader(
-        "Services Integrated",
-        type=["xlsx"],
-        key="si",
-        help="Services_Integrated_Project_Fi.xlsx",
-    )
-    f_red = st.file_uploader(
-        "Red Project Data Base",
-        type=["xlsx"],
-        key="red",
-        help="Red Project Data Base.xlsx",
-    )
+    d_files = {"Services Integrated": d_si, "MANDI": d_ma, "Red Project": d_red, "Leakage": d_lk}
+    _status_row(d_files)
 
-with col2:
-    f_mandi = st.file_uploader(
-        "MANDI",
-        type=["xlsx"],
-        key="mandi",
-        help="MANDI.xlsx",
-    )
-    f_leak = st.file_uploader(
-        "Leakage Report",
-        type=["xlsx"],
-        key="leak",
-        help="Leakage Report.xlsx",
-    )
+    d_ready = all(d_files.values())
+    if not d_ready:
+        remaining = 4 - sum(1 for v in d_files.values() if v)
+        st.caption(f"{remaining} file{'s' if remaining != 1 else ''} still needed.")
 
-# ── Upload status summary ──────────────────────────────────────────────────────
-files = {
-    "Services Integrated":     f_si,
-    "MANDI":                   f_mandi,
-    "Red Project Data Base":   f_red,
-    "Leakage Report":          f_leak,
-}
-n_ready = sum(1 for v in files.values() if v is not None)
-all_ready = n_ready == 4
-
-if n_ready > 0:
-    status_parts = []
-    for label, f in files.items():
-        if f:
-            status_parts.append(f'<span class="badge-ok">&#10003; {label}</span>')
-        else:
-            status_parts.append(f'<span class="badge-miss">&#9711; {label}</span>')
-    st.markdown(
-        "<div style='margin:8px 0 16px 0; display:flex; flex-wrap:wrap; gap:12px;'>"
-        + "  ".join(status_parts)
-        + "</div>",
-        unsafe_allow_html=True,
-    )
-
-if not all_ready:
-    remaining = 4 - n_ready
-    st.caption(f"{remaining} file{'s' if remaining > 1 else ''} still needed.")
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# ── Build button ───────────────────────────────────────────────────────────────
-build_clicked = st.button(
-    "Build Dashboard",
-    disabled=not all_ready,
-    use_container_width=True,
-)
-
-# ── Build logic ────────────────────────────────────────────────────────────────
-if build_clicked and all_ready:
-    progress = st.progress(0, text="Starting build…")
-
-    try:
-        sys.path.insert(0, os.path.dirname(__file__))
-        import build_core  # noqa: E402
-
-        with tempfile.TemporaryDirectory() as tmp:
-            def _save(uploaded, name):
-                path = os.path.join(tmp, name)
-                with open(path, "wb") as fh:
-                    fh.write(uploaded.getbuffer())
-                return path
-
-            progress.progress(10, text="Saving uploaded files…")
-            p_si   = _save(f_si,    "Services_Integrated.xlsx")
-            p_ma   = _save(f_mandi, "MANDI.xlsx")
-            p_red  = _save(f_red,   "Red_Project_Data_Base.xlsx")
-            p_leak = _save(f_leak,  "Leakage_Report.xlsx")
-
-            progress.progress(20, text="Building full dashboard…")
-            html_full = build_core.build(p_si, p_ma, p_red, p_leak)
-
-            progress.progress(80, text="Building public dashboard (wo personal data)…")
-            html_public = build_core.build_public(p_si, p_ma, p_red, p_leak)
-
-        progress.progress(100, text="Done.")
-        st.session_state["html_full"]   = html_full
-        st.session_state["html_public"] = html_public
-        st.session_state["build_ok"]    = True
-
-    except Exception as exc:
-        progress.empty()
-        st.markdown(
-            f'<div class="result-err"><strong>Build failed.</strong><br>{exc}</div>',
-            unsafe_allow_html=True,
-        )
-        st.session_state["build_ok"] = False
-
-# ── Download section ───────────────────────────────────────────────────────────
-if st.session_state.get("build_ok") and "html_full" in st.session_state:
-    b_full   = st.session_state["html_full"].encode("utf-8")
-    b_public = st.session_state["html_public"].encode("utf-8")
-
-    st.markdown(
-        f'<div class="result-ok">&#10003; Both dashboards built successfully &nbsp;|&nbsp; '
-        f'{len(b_full)/1024:.0f} KB full &nbsp;/&nbsp; {len(b_public)/1024:.0f} KB public</div>',
-        unsafe_allow_html=True,
-    )
     st.markdown("<br>", unsafe_allow_html=True)
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.download_button(
-            label="Download — Full Dashboard",
-            data=b_full,
-            file_name="CBS_Portfolio_Dashboard.html",
-            mime="text/html",
-            use_container_width=True,
+    d_build = st.button("Build Dashboard", disabled=not d_ready, use_container_width=True, key="d_build_btn")
+
+    if d_build and d_ready:
+        progress = st.progress(0, text="Starting build...")
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import build_core  # noqa: E402
+
+            with tempfile.TemporaryDirectory() as tmp:
+                def _save(uploaded, name):
+                    path = os.path.join(tmp, name)
+                    with open(path, "wb") as fh:
+                        fh.write(uploaded.getbuffer())
+                    return path
+
+                progress.progress(10, text="Saving uploaded files...")
+                p_si  = _save(d_si,  "Services_Integrated.xlsx")
+                p_ma  = _save(d_ma,  "MANDI.xlsx")
+                p_red = _save(d_red, "Red_Project_Data_Base.xlsx")
+                p_lk  = _save(d_lk,  "Leakage_Report.xlsx")
+
+                progress.progress(20, text="Building full dashboard...")
+                html_full = build_core.build(p_si, p_ma, p_red, p_lk)
+
+                progress.progress(80, text="Building public dashboard (no personal data)...")
+                html_public = build_core.build_public(p_si, p_ma, p_red, p_lk)
+
+            progress.progress(100, text="Done.")
+            st.session_state["d_html_full"]   = html_full
+            st.session_state["d_html_public"] = html_public
+            st.session_state["d_build_ok"]    = True
+
+        except Exception as exc:
+            progress.empty()
+            st.markdown(
+                f'<div class="result-err"><strong>Build failed.</strong><br>{exc}</div>',
+                unsafe_allow_html=True,
+            )
+            st.session_state["d_build_ok"] = False
+
+    if st.session_state.get("d_build_ok"):
+        progress_elem = None
+        try:
+            progress_elem.empty()
+        except Exception:
+            pass
+        st.markdown('<div class="result-ok">Dashboard built successfully. Download below.</div>',
+                    unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        dl1, dl2 = st.columns(2)
+        with dl1:
+            st.download_button(
+                label="Download Full Dashboard",
+                data=st.session_state["d_html_full"].encode("utf-8"),
+                file_name="CBS_Portfolio_Dashboard.html",
+                mime="text/html",
+                use_container_width=True,
+                key="d_dl_full",
+            )
+        with dl2:
+            st.download_button(
+                label="Download Public Dashboard",
+                data=st.session_state["d_html_public"].encode("utf-8"),
+                file_name="CBS_Portfolio_Dashboard_Public.html",
+                mime="text/html",
+                use_container_width=True,
+                key="d_dl_public",
+            )
+
+    st.markdown('<div class="sap-footer">CBS Portfolio Operations &bull; SAP</div>',
+                unsafe_allow_html=True)
+
+
+# +===========================================================================+
+# |  TAB 2 -- CBS OVERSIGHT TRACKER                                           |
+# +===========================================================================+
+with tab_track:
+
+    with st.expander("How to use -- Oversight Tracker", expanded=False):
+        st.markdown("""
+**Steps:**
+
+1. Upload the four current-week Excel files.
+2. *(Optional)* Expand **Previous Week Baseline** and upload last week's files to enable week-over-week delta indicators.
+3. Set the report date (defaults to today).
+4. Click **Build Tracker**.
+5. Download the self-contained HTML report.
+
+---
+| File | Contents |
+|---|---|
+| `Services_Integrated_Project_Fi.xlsx` | Active projects, EAC, FELIPE fields |
+| `MANDI.xlsx` | MANDI status, CBS Responsible, SO PM |
+| `Red Project Data Base.xlsx` | Red/Yellow report history |
+| `Leakage Report.xlsx` | Backlog leakage by item |
+
+The tracker produces **4 sections**: Red Status, Positive Leakage, High Negative Leakage, Missing FELIPE Snapshot.  
+All sections are filterable by Market Unit, Portfolio Segment, CBS Responsible, Contract Size, and Lifecycle Status.
+""")
+
+    # -- Current week files ----------------------------------------------------
+    st.markdown('<div class="upload-card"><h3>Current Week Files</h3>'
+                '<p>Required. These are the files you downloaded this week.</p></div>',
+                unsafe_allow_html=True)
+
+    t_col1, t_col2 = st.columns(2)
+    with t_col1:
+        t_si  = st.file_uploader("Services Integrated",   type=["xlsx"], key="t_si",  help="Services_Integrated_Project_Fi.xlsx")
+        t_red = st.file_uploader("Red Project Data Base", type=["xlsx"], key="t_red", help="Red Project Data Base.xlsx")
+    with t_col2:
+        t_ma  = st.file_uploader("MANDI",                 type=["xlsx"], key="t_ma",  help="MANDI.xlsx")
+        t_lk  = st.file_uploader("Leakage Report",        type=["xlsx"], key="t_lk",  help="Leakage Report.xlsx")
+
+    t_files = {"Services Integrated": t_si, "MANDI": t_ma, "Red Project": t_red, "Leakage": t_lk}
+    _status_row(t_files)
+
+    t_ready = all(t_files.values())
+    if not t_ready:
+        remaining = 4 - sum(1 for v in t_files.values() if v)
+        st.caption(f"{remaining} file{'s' if remaining != 1 else ''} still needed.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # -- Previous week baseline (optional) ------------------------------------
+    with st.expander("Previous Week Baseline (optional -- enables delta indicators)", expanded=False):
+        st.markdown(
+            "Upload the same four files from the **previous week** to display "
+            "week-over-week change indicators (^ / v) on the KPI cards.",
+            unsafe_allow_html=False,
         )
-    with col_b:
+        b_col1, b_col2 = st.columns(2)
+        with b_col1:
+            b_si  = st.file_uploader("Services Integrated (prev week)",   type=["xlsx"], key="b_si")
+            b_red = st.file_uploader("Red Project Data Base (prev week)", type=["xlsx"], key="b_red")
+        with b_col2:
+            b_ma  = st.file_uploader("MANDI (prev week)",                 type=["xlsx"], key="b_ma")
+            b_lk  = st.file_uploader("Leakage Report (prev week)",        type=["xlsx"], key="b_lk")
+
+        b_files = {"Services Integrated": b_si, "MANDI": b_ma, "Red Project": b_red, "Leakage": b_lk}
+        _status_row(b_files)
+        b_ready = all(b_files.values())
+
+        if b_ready:
+            b_date = st.date_input(
+                "Previous week date",
+                value=datetime.date.today() - datetime.timedelta(days=7),
+                key="b_date_input",
+                help="The date of the previous week's data snapshot (used for the delta label).",
+            )
+        else:
+            b_date = None
+
+    # -- Report date -----------------------------------------------------------
+    today_val = st.date_input(
+        "Report date",
+        value=datetime.date.today(),
+        key="t_date_input",
+        help="The date displayed in the report header and used for snapshot-window calculations.",
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # -- Build button ----------------------------------------------------------
+    t_build = st.button(
+        "Build Tracker",
+        disabled=not t_ready,
+        use_container_width=True,
+        key="t_build_btn",
+    )
+
+    if t_build and t_ready:
+        t_progress = st.progress(0, text="Starting build...")
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            import build_tracker_core  # noqa: E402
+
+            t_progress.progress(10, text="Reading current-week files...")
+            si_bytes  = t_si.getvalue()
+            ma_bytes  = t_ma.getvalue()
+            red_bytes = t_red.getvalue()
+            lk_bytes  = t_lk.getvalue()
+
+            baseline_args = {}
+            if b_ready:
+                t_progress.progress(20, text="Reading baseline files...")
+                baseline_args = dict(
+                    baseline_si_src  = b_si.getvalue(),
+                    baseline_m_src   = b_ma.getvalue(),
+                    baseline_r_src   = b_red.getvalue(),
+                    baseline_l_src   = b_lk.getvalue(),
+                    baseline_date    = str(b_date),
+                )
+
+            t_progress.progress(40, text="Running data pipeline...")
+            html_tracker = build_tracker_core.build_tracker(
+                si_src      = si_bytes,
+                m_src       = ma_bytes,
+                r_src       = red_bytes,
+                l_src       = lk_bytes,
+                today_date  = str(today_val),
+                **baseline_args,
+            )
+
+            t_progress.progress(100, text="Done.")
+            st.session_state["t_html"]     = html_tracker
+            st.session_state["t_build_ok"] = True
+            st.session_state["t_filename"] = (
+                f"CBS_Oversight_Tracker_{today_val.strftime('%Y%m%d')}.html"
+            )
+
+        except Exception as exc:
+            t_progress.empty()
+            st.markdown(
+                f'<div class="result-err"><strong>Build failed.</strong><br>{exc}</div>',
+                unsafe_allow_html=True,
+            )
+            import traceback
+            st.code(traceback.format_exc(), language="python")
+            st.session_state["t_build_ok"] = False
+
+    if st.session_state.get("t_build_ok"):
+        _html_bytes = st.session_state["t_html"].encode("utf-8")
+        _fname      = st.session_state.get("t_filename", "CBS_Oversight_Tracker.html")
+        _size_kb    = len(_html_bytes) / 1024
+
+        st.markdown(
+            f'<div class="result-ok">Tracker built successfully &mdash; '
+            f'{_size_kb:,.0f} KB. Download below.</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
         st.download_button(
-            label="Download — wo Personal Data",
-            data=b_public,
-            file_name="CBS_Dashboard_Public.html",
+            label="Download Oversight Tracker",
+            data=_html_bytes,
+            file_name=_fname,
             mime="text/html",
             use_container_width=True,
+            key="t_dl_btn",
         )
 
-# ── Footer ─────────────────────────────────────────────────────────────────────
-st.markdown(
-    '<div class="sap-footer">CBS Portfolio Dashboard &nbsp;|&nbsp; SAP Delivery Operations</div>',
-    unsafe_allow_html=True,
-)
+        # Quick stats
+        with st.expander("Build summary", expanded=False):
+            st.caption(
+                f"File: `{_fname}` &nbsp;|&nbsp; Size: {_size_kb:,.0f} KB"
+            )
+
+    st.markdown('<div class="sap-footer">CBS Portfolio Operations &bull; SAP</div>',
+                unsafe_allow_html=True)
