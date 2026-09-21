@@ -172,6 +172,31 @@ def _status_row(files: dict):
 
 
 # ===============================================================================
+# SHARED FILE UPLOADERS (used by both Dashboard and Tracker)
+# ===============================================================================
+st.markdown('<div class="upload-card"><h3>Source Files</h3>'
+            '<p>All four files are required. Upload once, use for both tools.</p></div>',
+            unsafe_allow_html=True)
+
+u_col1, u_col2 = st.columns(2)
+with u_col1:
+    u_si  = st.file_uploader("Services Integrated",   type=["xlsx"], key="u_si",  help="Services_Integrated_Project_Fi.xlsx")
+    u_red = st.file_uploader("Red Project Data Base",  type=["xlsx"], key="u_red", help="Red Project Data Base.xlsx")
+with u_col2:
+    u_ma  = st.file_uploader("MANDI",                  type=["xlsx"], key="u_ma",  help="MANDI.xlsx")
+    u_lk  = st.file_uploader("Leakage Report",         type=["xlsx"], key="u_lk",  help="Leakage Report.xlsx")
+
+shared_files = {"Services Integrated": u_si, "MANDI": u_ma, "Red Project": u_red, "Leakage": u_lk}
+_status_row(shared_files)
+
+files_ready = all(shared_files.values())
+if not files_ready:
+    remaining = 4 - sum(1 for v in shared_files.values() if v)
+    st.caption(f"{remaining} file{'s' if remaining != 1 else ''} still needed.")
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# ===============================================================================
 # TABS
 # ===============================================================================
 tab_dash, tab_track = st.tabs(["CBS Portfolio Dashboard", "CBS Oversight Tracker"])
@@ -186,7 +211,7 @@ with tab_dash:
         st.markdown("""
 **Three steps:**
 
-1. Upload the four Excel files below.
+1. Upload the four Excel files above.
 2. Click **Build Dashboard**.
 3. Download the full version and the public version (without personal data).
 
@@ -201,30 +226,11 @@ The dashboards are self-contained HTML files that anyone can open in a browser.
 | `Leakage Report.xlsx` | Leakage and billing type data |
 """)
 
-    st.markdown('<div class="upload-card"><h3>Source Files</h3><p>All four files are required.</p></div>',
-                unsafe_allow_html=True)
-
-    d_col1, d_col2 = st.columns(2)
-    with d_col1:
-        d_si  = st.file_uploader("Services Integrated",    type=["xlsx"], key="d_si",  help="Services_Integrated_Project_Fi.xlsx")
-        d_red = st.file_uploader("Red Project Data Base",  type=["xlsx"], key="d_red", help="Red Project Data Base.xlsx")
-    with d_col2:
-        d_ma  = st.file_uploader("MANDI",                  type=["xlsx"], key="d_ma",  help="MANDI.xlsx")
-        d_lk  = st.file_uploader("Leakage Report",         type=["xlsx"], key="d_lk",  help="Leakage Report.xlsx")
-
-    d_files = {"Services Integrated": d_si, "MANDI": d_ma, "Red Project": d_red, "Leakage": d_lk}
-    _status_row(d_files)
-
-    d_ready = all(d_files.values())
-    if not d_ready:
-        remaining = 4 - sum(1 for v in d_files.values() if v)
-        st.caption(f"{remaining} file{'s' if remaining != 1 else ''} still needed.")
-
     st.markdown("<br>", unsafe_allow_html=True)
 
-    d_build = st.button("Build Dashboard", disabled=not d_ready, use_container_width=True, key="d_build_btn")
+    d_build = st.button("Build Dashboard", disabled=not files_ready, use_container_width=True, key="d_build_btn")
 
-    if d_build and d_ready:
+    if d_build and files_ready:
         progress = st.progress(0, text="Starting build...")
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -238,10 +244,10 @@ The dashboards are self-contained HTML files that anyone can open in a browser.
                     return path
 
                 progress.progress(10, text="Saving uploaded files...")
-                p_si  = _save(d_si,  "Services_Integrated.xlsx")
-                p_ma  = _save(d_ma,  "MANDI.xlsx")
-                p_red = _save(d_red, "Red_Project_Data_Base.xlsx")
-                p_lk  = _save(d_lk,  "Leakage_Report.xlsx")
+                p_si  = _save(u_si,  "Services_Integrated.xlsx")
+                p_ma  = _save(u_ma,  "MANDI.xlsx")
+                p_red = _save(u_red, "Red_Project_Data_Base.xlsx")
+                p_lk  = _save(u_lk,  "Leakage_Report.xlsx")
 
                 progress.progress(20, text="Building full dashboard...")
                 html_full = build_core.build(p_si, p_ma, p_red, p_lk)
@@ -304,7 +310,7 @@ with tab_track:
         st.markdown("""
 **Steps:**
 
-1. Upload the four current-week Excel files.
+1. Upload the four current-week Excel files above.
 2. *(Optional)* Expand **Previous Week Baseline** and upload last week's files to enable week-over-week delta indicators.
 3. Set the report date (defaults to today).
 4. Click **Build Tracker**.
@@ -321,29 +327,6 @@ with tab_track:
 The tracker produces **4 sections**: Red Status, Positive Leakage, High Negative Leakage, Missing FELIPE Snapshot.  
 All sections are filterable by Market Unit, Portfolio Segment, CBS Responsible, Contract Size, and Lifecycle Status.
 """)
-
-    # -- Current week files ----------------------------------------------------
-    st.markdown('<div class="upload-card"><h3>Current Week Files</h3>'
-                '<p>Required. These are the files you downloaded this week.</p></div>',
-                unsafe_allow_html=True)
-
-    t_col1, t_col2 = st.columns(2)
-    with t_col1:
-        t_si  = st.file_uploader("Services Integrated",   type=["xlsx"], key="t_si",  help="Services_Integrated_Project_Fi.xlsx")
-        t_red = st.file_uploader("Red Project Data Base", type=["xlsx"], key="t_red", help="Red Project Data Base.xlsx")
-    with t_col2:
-        t_ma  = st.file_uploader("MANDI",                 type=["xlsx"], key="t_ma",  help="MANDI.xlsx")
-        t_lk  = st.file_uploader("Leakage Report",        type=["xlsx"], key="t_lk",  help="Leakage Report.xlsx")
-
-    t_files = {"Services Integrated": t_si, "MANDI": t_ma, "Red Project": t_red, "Leakage": t_lk}
-    _status_row(t_files)
-
-    t_ready = all(t_files.values())
-    if not t_ready:
-        remaining = 4 - sum(1 for v in t_files.values() if v)
-        st.caption(f"{remaining} file{'s' if remaining != 1 else ''} still needed.")
-
-    st.markdown("<br>", unsafe_allow_html=True)
 
     # -- Previous week baseline (optional) ------------------------------------
     with st.expander("Previous Week Baseline (optional -- enables delta indicators)", expanded=False):
@@ -387,22 +370,22 @@ All sections are filterable by Market Unit, Portfolio Segment, CBS Responsible, 
     # -- Build button ----------------------------------------------------------
     t_build = st.button(
         "Build Tracker",
-        disabled=not t_ready,
+        disabled=not files_ready,
         use_container_width=True,
         key="t_build_btn",
     )
 
-    if t_build and t_ready:
+    if t_build and files_ready:
         t_progress = st.progress(0, text="Starting build...")
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             import build_tracker_core  # noqa: E402
 
             t_progress.progress(10, text="Reading current-week files...")
-            si_bytes  = t_si.getvalue()
-            ma_bytes  = t_ma.getvalue()
-            red_bytes = t_red.getvalue()
-            lk_bytes  = t_lk.getvalue()
+            si_bytes  = u_si.getvalue()
+            ma_bytes  = u_ma.getvalue()
+            red_bytes = u_red.getvalue()
+            lk_bytes  = u_lk.getvalue()
 
             baseline_args = {}
             if b_ready:
