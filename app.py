@@ -311,10 +311,10 @@ with tab_track:
 **Steps:**
 
 1. Upload the four current-week Excel files above.
-2. *(Optional)* Expand **Previous Week Baseline** and upload last week's files to enable week-over-week delta indicators.
+2. *(Optional)* Upload a **Historical Snapshot** (JSON) from a previous build to enable week-over-week deltas and multi-week trend indicators.
 3. Set the report date (defaults to today).
 4. Click **Build Tracker**.
-5. Download the self-contained HTML report.
+5. Download the HTML report **and** the snapshot JSON (feed it back next week for trend history).
 
 ---
 | File | Contents |
@@ -324,38 +324,31 @@ with tab_track:
 | `Red Project Data Base.xlsx` | Red/Yellow report history |
 | `Leakage Report.xlsx` | Backlog leakage by item |
 
-The tracker produces **4 sections**: Red Status, Positive Leakage, High Negative Leakage, Missing FELIPE Snapshot.  
+The tracker produces **4 sections**: Red Status, Positive Leakage, High Negative Leakage, Missing FELIPE Snapshot.
 All sections are filterable by Market Unit, Portfolio Segment, CBS Responsible, Contract Size, and Lifecycle Status.
+
+**Trend history:** Each build produces a snapshot JSON that accumulates up to 12 weeks of KPI history.
+Upload the snapshot from your last build to see trend dots on every KPI card and per-project trend columns.
 """)
 
-    # -- Previous week baseline (optional) ------------------------------------
-    with st.expander("Previous Week Baseline (optional -- enables delta indicators)", expanded=False):
+    # -- Historical snapshot (optional -- enables trends) -----------------------
+    with st.expander("Historical Snapshot (optional -- enables trend indicators)", expanded=False):
         st.markdown(
-            "Upload the same four files from the **previous week** to display "
-            "week-over-week change indicators (^ / v) on the KPI cards.",
+            "Upload the **snapshot JSON** from your previous build to display "
+            "week-over-week deltas and multi-week trend dots on KPI cards and project rows. "
+            "The snapshot accumulates up to 12 weeks of history automatically.",
             unsafe_allow_html=False,
         )
-        b_col1, b_col2 = st.columns(2)
-        with b_col1:
-            b_si  = st.file_uploader("Services Integrated (prev week)",   type=["xlsx"], key="b_si")
-            b_red = st.file_uploader("Red Project Data Base (prev week)", type=["xlsx"], key="b_red")
-        with b_col2:
-            b_ma  = st.file_uploader("MANDI (prev week)",                 type=["xlsx"], key="b_ma")
-            b_lk  = st.file_uploader("Leakage Report (prev week)",        type=["xlsx"], key="b_lk")
-
-        b_files = {"Services Integrated": b_si, "MANDI": b_ma, "Red Project": b_red, "Leakage": b_lk}
-        _status_row(b_files)
-        b_ready = all(b_files.values())
-
-        if b_ready:
-            b_date = st.date_input(
-                "Previous week date",
-                value=datetime.date.today() - datetime.timedelta(days=7),
-                key="b_date_input",
-                help="The date of the previous week's data snapshot (used for the delta label).",
-            )
+        t_snap_file = st.file_uploader(
+            "Snapshot JSON from previous build",
+            type=["json"],
+            key="t_snap",
+            help="The CBS_Tracker_Snapshot_*.json file downloaded alongside the HTML in your last build.",
+        )
+        if t_snap_file:
+            st.success("Snapshot loaded -- trend indicators will be enabled.")
         else:
-            b_date = None
+            st.caption("No snapshot uploaded. The report will be generated without trend history.")
 
     # -- Report date -----------------------------------------------------------
     today_val = st.date_input(
@@ -379,7 +372,7 @@ All sections are filterable by Market Unit, Portfolio Segment, CBS Responsible, 
         t_progress = st.progress(0, text="Starting build...")
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            import build_tracker_core  # noqa: E402
+            import build_tracker_core_v2 as build_tracker_core  # noqa: E402
 
             t_progress.progress(10, text="Reading current-week files...")
             si_bytes  = u_si.getvalue()
@@ -387,32 +380,27 @@ All sections are filterable by Market Unit, Portfolio Segment, CBS Responsible, 
             red_bytes = u_red.getvalue()
             lk_bytes  = u_lk.getvalue()
 
-            baseline_args = {}
-            if b_ready:
-                t_progress.progress(20, text="Reading baseline files...")
-                baseline_args = dict(
-                    baseline_si_src  = b_si.getvalue(),
-                    baseline_m_src   = b_ma.getvalue(),
-                    baseline_r_src   = b_red.getvalue(),
-                    baseline_l_src   = b_lk.getvalue(),
-                    baseline_date    = str(b_date),
-                )
+            snap_bytes = t_snap_file.getvalue() if t_snap_file else None
 
             t_progress.progress(40, text="Running data pipeline...")
-            html_tracker = build_tracker_core.build_tracker(
-                si_src      = si_bytes,
-                m_src       = ma_bytes,
-                r_src       = red_bytes,
-                l_src       = lk_bytes,
-                today_date  = str(today_val),
-                **baseline_args,
+            html_tracker, snap_json = build_tracker_core.build_tracker(
+                si_src       = si_bytes,
+                m_src        = ma_bytes,
+                r_src        = red_bytes,
+                l_src        = lk_bytes,
+                today_date   = str(today_val),
+                snapshot_src = snap_bytes,
             )
 
             t_progress.progress(100, text="Done.")
-            st.session_state["t_html"]     = html_tracker
-            st.session_state["t_build_ok"] = True
-            st.session_state["t_filename"] = (
+            st.session_state["t_html"]      = html_tracker
+            st.session_state["t_snap_json"] = snap_json
+            st.session_state["t_build_ok"]  = True
+            st.session_state["t_filename"]  = (
                 f"CBS_Oversight_Tracker_{today_val.strftime('%Y%m%d')}.html"
+            )
+            st.session_state["t_snap_filename"] = (
+                f"CBS_Tracker_Snapshot_{today_val.strftime('%Y%m%d')}.json"
             )
 
         except Exception as exc:
@@ -436,19 +424,38 @@ All sections are filterable by Market Unit, Portfolio Segment, CBS Responsible, 
             unsafe_allow_html=True,
         )
         st.markdown("<br>", unsafe_allow_html=True)
-        st.download_button(
-            label="Download Oversight Tracker",
-            data=_html_bytes,
-            file_name=_fname,
-            mime="text/html",
-            use_container_width=True,
-            key="t_dl_btn",
-        )
+
+        dl_col1, dl_col2 = st.columns(2)
+        with dl_col1:
+            st.download_button(
+                label="Download Oversight Tracker (HTML)",
+                data=_html_bytes,
+                file_name=_fname,
+                mime="text/html",
+                use_container_width=True,
+                key="t_dl_btn",
+            )
+        with dl_col2:
+            _snap_json  = st.session_state.get("t_snap_json", "{}")
+            _snap_fname = st.session_state.get("t_snap_filename", "CBS_Tracker_Snapshot.json")
+            st.download_button(
+                label="Download Snapshot (JSON)",
+                data=_snap_json.encode("utf-8"),
+                file_name=_snap_fname,
+                mime="application/json",
+                use_container_width=True,
+                key="t_dl_snap_btn",
+                help="Save this file and upload it next week to enable multi-week trend indicators.",
+            )
 
         # Quick stats
         with st.expander("Build summary", expanded=False):
+            import json as _json
+            _snap_data = _json.loads(st.session_state.get("t_snap_json", "{}"))
+            _n_weeks = len(_snap_data.get("weeks", []))
             st.caption(
-                f"File: `{_fname}` &nbsp;|&nbsp; Size: {_size_kb:,.0f} KB"
+                f"File: `{_fname}` &nbsp;|&nbsp; Size: {_size_kb:,.0f} KB &nbsp;|&nbsp; "
+                f"Snapshot history: {_n_weeks} week{'s' if _n_weeks != 1 else ''}"
             )
 
     st.markdown('<div class="sap-footer">CBS Portfolio Operations &bull; SAP</div>',

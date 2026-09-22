@@ -437,6 +437,100 @@ def _compute_mu_counts(df_all, s1, s2, s3, s4):
     return result
 
 
+
+# =============================================================================
+# SNAPSHOT HELPERS  (multi-week trend history)
+# =============================================================================
+_SNAP_VER  = 2
+_MAX_WEEKS = 12
+
+
+def _build_week_snap(date_str, df, sec1, sec2, sec3, sec4, mu_counts):
+    """Create a compact snapshot dict for a single week."""
+    s1_ids = set(sec1['Project'].tolist()) if len(sec1) else set()
+    s2_ids = set(sec2['Project'].tolist()) if len(sec2) else set()
+    s3_ids = set(sec3['Project'].tolist()) if len(sec3) else set()
+    s4_ids = set(sec4['Project'].tolist()) if len(sec4) else set()
+    projects = {}
+    for _, row in df.iterrows():
+        pid = str(row.get('Project', ''))
+        if not pid or pid in ('nan', 'None', ''):
+            continue
+        secs = []
+        if pid in s1_ids: secs.append(1)
+        if pid in s2_ids: secs.append(2)
+        if pid in s3_ids: secs.append(3)
+        if pid in s4_ids: secs.append(4)
+        projects[pid] = {'s': str(row.get('MANDI_Status', '--'))[:2], 'sec': secs}
+    return {'date': date_str, 'mu_counts': mu_counts, 'projects': projects}
+
+
+def _merge_snapshots(new_week, existing_src=None):
+    """Merge *new_week* into existing snapshot history.
+    Returns (merged_dict, merged_json_str).
+    """
+    if existing_src is not None:
+        raw = existing_src
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode('utf-8')
+        if hasattr(raw, 'read'):
+            if hasattr(raw, 'seek'):
+                raw.seek(0)
+            raw = raw.read()
+            if isinstance(raw, (bytes, bytearray)):
+                raw = raw.decode('utf-8')
+        snap = json.loads(raw) if isinstance(raw, str) else raw
+    else:
+        snap = {'version': _SNAP_VER, 'weeks': []}
+
+    weeks = [w for w in snap.get('weeks', []) if w.get('date') != new_week['date']]
+    weeks.append(new_week)
+    weeks.sort(key=lambda w: w['date'])
+    if len(weeks) > _MAX_WEEKS:
+        weeks = weeks[-_MAX_WEEKS:]
+    merged = {'version': _SNAP_VER, 'weeks': weeks}
+    return merged, json.dumps(merged, separators=(',', ':'))
+
+
+def _trend_dots_kpi(weeks, key, sub_key='c', lower_is_better=True):
+    """Return HTML trend-dot strip for a KPI across snapshot weeks."""
+    if len(weeks) < 2:
+        return ''
+    vals = []
+    for w in weeks:
+        mc = w.get('mu_counts', {}).get('all', {})
+        if sub_key:
+            vals.append(mc.get(key, {}).get(sub_key, 0) if isinstance(mc.get(key), dict) else 0)
+        else:
+            vals.append(mc.get(key, 0))
+    dots = []
+    for i in range(1, len(vals)):
+        diff = vals[i] - vals[i - 1]
+        if abs(diff) < 0.005:
+            cls = 'td-same'
+        elif lower_is_better:
+            cls = 'td-worse' if diff > 0 else 'td-better'
+        else:
+            cls = 'td-better' if diff > 0 else 'td-worse'
+        dots.append(f'<span class="trend-dot {cls}" title="w{i}"></span>')
+    return '<span class="trend-dots">' + ''.join(dots) + '</span>' if dots else ''
+
+
+def _trend_dots_project(history_weeks, project_id, section_num):
+    """Return HTML dots showing per-project section membership over historical weeks.
+    *history_weeks* = [(date_str, {pid: {s, sec}}), ...] -- excludes current week.
+    """
+    if not history_weeks:
+        return '<span class="trend-na">--</span>'
+    pid = str(project_id)
+    dots = []
+    for date, projs in history_weeks:
+        p = projs.get(pid)
+        in_sec = p is not None and section_num in p.get('sec', [])
+        cls = 'td-in' if in_sec else 'td-out'
+        dots.append(f'<span class="trend-dot {cls}" title="{date}"></span>')
+    return '<span class="trend-dots">' + ''.join(dots) + '</span>' if dots else '<span class="trend-na">--</span>'
+
 # =============================================================================
 # MAIN PUBLIC FUNCTION
 # =============================================================================
@@ -451,6 +545,7 @@ def build_tracker(
     baseline_l_src=None,
     today_date=None,
     baseline_date=None,
+    snapshot_src=None,
 ):
     """
     Build the CBS Oversight Tracker HTML report.
@@ -466,10 +561,15 @@ def build_tracker(
     baseline_date
         str 'YYYY-MM-DD' for the baseline week label (optional).
 
+    snapshot_src
+        Snapshot JSON from a previous build (bytes, file-like, or str).
+        When supplied, provides multi-week trend data and replaces the
+        need for baseline files.
+
     Returns
     -------
-    str
-        Self-contained HTML document.
+    (str, str)
+        Tuple of (HTML document, snapshot JSON for next week).
     """
     from datetime import date as _date
 
@@ -491,6 +591,9 @@ def build_tracker(
         df_si, df_m, df_r, df_l, TODAY
     )
 
+    # -- 3b. Current MU counts (for snapshot) --------------------------------
+    _cur_mu_counts = _compute_mu_counts(df, sec1, sec2, sec3, sec4)
+
     # -- 4. KPIs ---------------------------------------------------------------
     total_projects     = len(df)
     red_count          = int((df['MANDI_Status'] == 'R').sum())
@@ -501,10 +604,28 @@ def build_tracker(
     total_pos_leak_val = float(sec2['Pos_BL'].sum())
     total_neg_leak_val = float(sec3['Total_BL'].sum())
 
-    # -- 5. Baseline (optional) ------------------------------------------------
+    # -- 5. Snapshot + baseline ------------------------------------------------
+    _this_snap = _build_week_snap(
+        TODAY.strftime('%Y-%m-%d'), df, sec1, sec2, sec3, sec4, _cur_mu_counts,
+    )
+    _snap_dict, _snap_json_out = _merge_snapshots(_this_snap, snapshot_src)
+    _snap_weeks = _snap_dict.get('weeks', [])
+
+    # History = all weeks except the current one (for project trend dots)
+    _history_weeks = [
+        (w['date'], w.get('projects', {}))
+        for w in _snap_weeks if w['date'] != TODAY.strftime('%Y-%m-%d')
+    ]
+
+    # Delta source: prefer snapshot (2nd-to-last week), fall back to legacy baseline
     _has_baseline = (baseline_si_src is not None and
                      all(x is not None for x in [baseline_m_src, baseline_r_src, baseline_l_src]))
-    if _has_baseline:
+    if len(_snap_weeks) >= 2:
+        _prev_snap_week = _snap_weeks[-2]
+        _PREV_MU_RAW   = _prev_snap_week.get('mu_counts', {})
+        _prev_d = pd.Timestamp(_prev_snap_week['date'])
+        PREV_DATE_STR = _prev_d.strftime('%b %-d')
+    elif _has_baseline:
         b_today = pd.Timestamp(baseline_date) if baseline_date else TODAY - pd.Timedelta(days=7)
         bsi = _load_src(baseline_si_src)
         bm  = _load_src(baseline_m_src)
@@ -517,6 +638,15 @@ def build_tracker(
         PREV_DATE_STR = ''
 
     PREV_MU_JSON = json.dumps(_PREV_MU_RAW, separators=(',', ':'))
+
+    # KPI-level trend dots (from full snapshot history)
+    _td_proj  = _trend_dots_kpi(_snap_weeks, 'proj', sub_key=None, lower_is_better=False)
+    _td_red   = _trend_dots_kpi(_snap_weeks, 's1', 'c', True)
+    _td_pos_n = _trend_dots_kpi(_snap_weeks, 's2', 'c', True)
+    _td_pos_v = _trend_dots_kpi(_snap_weeks, 's2', 'v', True)
+    _td_neg_n = _trend_dots_kpi(_snap_weeks, 's3', 'c', True)
+    _td_neg_v = _trend_dots_kpi(_snap_weeks, 's3', 'v', True)
+    _td_stale = _trend_dots_kpi(_snap_weeks, 's4', 'c', True)
 
     # -- 6. Delta pills --------------------------------------------------------
     def _dpill(curr, prev, lower_is_better=True, fmt='int', use_abs=False, pid=''):
@@ -650,6 +780,7 @@ def build_tracker(
             fixable_badge(fix_val),
             _ss(sc_val, 35),
             cb, rc,
+            _trend_dots_project(_history_weeks, row['Project'], 1),
             cls=cls, mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val,
         )
 
@@ -676,6 +807,7 @@ def build_tracker(
             f'<span class="leak-pos">{pct:.1f}%</span>',
             _ss(row.get('Leak_Comment', '--'), 50),
             _fmt_date(row.get('_felipe_snap', None)),
+            _trend_dots_project(_history_weeks, row['Project'], 2),
             mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val,
             numval=round(float(row['Pos_BL']), 2),
         )
@@ -703,6 +835,7 @@ def build_tracker(
             f'<span class="leak-neg">-{pct:.1f}%</span>',
             _ss(row.get('Leak_Comment', '--'), 50),
             _fmt_date(row.get('_felipe_snap', None)),
+            _trend_dots_project(_history_weeks, row['Project'], 3),
             mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val,
             numval=round(float(row['Total_BL']), 2),
         )
@@ -743,6 +876,7 @@ def build_tracker(
             f'<span class="{gap_cls}">{gap_str}</span>',
             snap_type,
             status_badge(row.get('MANDI_Status', '--')),
+            _trend_dots_project(_history_weeks, row['Project'], 4),
             cls=cls, mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val,
         )
 
@@ -885,6 +1019,15 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
 .lc-pill span{{display:inline-block;padding:3px 11px;border:1.5px solid #D8DCE0;border-radius:20px;font-size:11px;font-weight:600;color:#5D6A73;background:#fff;transition:all .15s;white-space:nowrap}}
 .lc-pill input:checked + span{{background:#0070F2;border-color:#0070F2;color:#fff}}
 .lc-pill:hover span{{border-color:#0070F2;color:#0070F2}}
+.trend-dots{{display:inline-flex;gap:3px;align-items:center;margin-top:3px}}
+.trend-dot{{width:7px;height:7px;border-radius:50%;flex-shrink:0}}
+.td-better{{background:#107F3E}}
+.td-worse{{background:#BB0000}}
+.td-same{{background:#D8DCE0}}
+.td-in{{background:#0070F2}}
+.td-out{{background:#E1E2E6}}
+.trend-na{{color:#D8DCE0;font-size:10px}}
+.trend-hdr{{font-size:9px;color:#8396A8;white-space:nowrap}}
 @media print{{
   .header{{position:relative}}
   .filter-bar,.filter-bar-2,.global-export-btn{{display:none}}
@@ -923,6 +1066,7 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
     <span class="kpi-group-lbl">Portfolio</span>
     <span class="kpi-val" id="kv-proj">{total_projects}</span>
     {d_proj}
+    {_td_proj}
     <span class="kpi-lbl">Active Projects<br>All Market Units</span>
   </div>
   <div class="kpi-sep"></div>
@@ -930,6 +1074,7 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
     <span class="kpi-group-lbl">MANDI Status</span>
     <span class="kpi-val" id="kv-red">{red_count}</span>
     {d_red}
+    {_td_red}
     <span class="kpi-lbl">Red Status</span>
   </div>
   <div class="kpi-card kpi-amber">
@@ -943,12 +1088,14 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
     <span class="kpi-group-lbl">Positive Leakage</span>
     <span class="kpi-val" id="kv-pos-n">{pos_leak_count}</span>
     {d_pos_n}
+    {_td_pos_n}
     <span class="kpi-lbl">Projects with<br>Positive Leakage</span>
   </div>
   <div class="kpi-card kpi-orange">
     <span class="kpi-group-lbl">Positive Leakage</span>
     <span class="kpi-val-md" id="kv-pos-v">{_fmt_usd(total_pos_leak_val)}</span>
     {d_pos_v}
+    {_td_pos_v}
     <span class="kpi-lbl">Total Exposure</span>
   </div>
   <div class="kpi-sep"></div>
@@ -956,12 +1103,14 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
     <span class="kpi-group-lbl">Negative Leakage</span>
     <span class="kpi-val" id="kv-neg-n">{neg_leak_count}</span>
     {d_neg_n}
+    {_td_neg_n}
     <span class="kpi-lbl">High Neg. Leakage<br>(&gt;15%)</span>
   </div>
   <div class="kpi-card kpi-amber">
     <span class="kpi-group-lbl">Negative Leakage</span>
     <span class="kpi-val-md" id="kv-neg-v">{_fmt_usd(total_neg_leak_val)}</span>
     {d_neg_v}
+    {_td_neg_v}
     <span class="kpi-lbl">Total Value</span>
   </div>
   <div class="kpi-sep"></div>
@@ -969,6 +1118,7 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
     <span class="kpi-group-lbl">Snapshot</span>
     <span class="kpi-val" id="kv-stale">{stale_snap_count}</span>
     {d_stale}
+    {_td_stale}
     <span class="kpi-lbl">Stale / Missing<br>Snapshot</span>
   </div>
 </div>
@@ -1060,11 +1210,11 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
   <th>Project ID</th><th>Sales Order</th><th>SO PM</th><th>Description</th><th>Customer</th><th>Bucket</th>
   <th>CBS Responsible</th><th>MANDI</th><th>SAP Margin</th>
   <th>CBR</th><th>EAC Margin</th>
-  <th>Fixable</th><th>Standard Comment</th><th>Weeks Red</th><th>Resolved</th>
+  <th>Fixable</th><th>Standard Comment</th><th>Weeks Red</th><th>Resolved</th><th class="trend-hdr">Trend</th>
 </tr></thead>
 <tbody>
 {"".join(s1_row(row) for _, row in sec1.iterrows()) if len(sec1) > 0
- else '<tr><td colspan="15" class="empty-state">No red status projects found.</td></tr>'}
+ else '<tr><td colspan="16" class="empty-state">No red status projects found.</td></tr>'}
 </tbody>
 </table>
 </div>
@@ -1087,11 +1237,11 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
 <thead><tr>
   <th>Project ID</th><th>Sales Order</th><th>SO PM</th><th>Description</th><th>Customer</th><th>Bucket</th>
   <th>CBS Responsible</th><th>Contract Type</th><th>Contract Net Value</th>
-  <th>Positive Leakage</th><th>Leakage %</th><th>Comment</th><th>Last Snapshot</th>
+  <th>Positive Leakage</th><th>Leakage %</th><th>Comment</th><th>Last Snapshot</th><th class="trend-hdr">Trend</th>
 </tr></thead>
 <tbody>
 {"".join(s2_row(row) for _, row in sec2.iterrows()) if len(sec2) > 0
- else '<tr><td colspan="13" class="empty-state">No positive leakage projects found.</td></tr>'}
+ else '<tr><td colspan="14" class="empty-state">No positive leakage projects found.</td></tr>'}
 </tbody>
 </table>
 </div>
@@ -1114,11 +1264,11 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
 <thead><tr>
   <th>Project ID</th><th>Sales Order</th><th>SO PM</th><th>Description</th><th>Customer</th><th>Bucket</th>
   <th>CBS Responsible</th><th>Contract Type</th><th>Contract Net Value</th>
-  <th>Backlog Leakage</th><th>Leakage %</th><th>Comment</th><th>Last Snapshot</th>
+  <th>Backlog Leakage</th><th>Leakage %</th><th>Comment</th><th>Last Snapshot</th><th class="trend-hdr">Trend</th>
 </tr></thead>
 <tbody>
 {"".join(s3_row(row) for _, row in sec3.iterrows()) if len(sec3) > 0
- else '<tr><td colspan="13" class="empty-state">No high negative leakage projects found.</td></tr>'}
+ else '<tr><td colspan="14" class="empty-state">No high negative leakage projects found.</td></tr>'}
 </tbody>
 </table>
 </div>
@@ -1142,11 +1292,11 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
   <th>Project ID</th><th>Sales Order</th><th>SO PM</th><th>Customer</th><th>Bucket</th><th>Lifecycle</th>
   <th>CBS Responsible</th><th>End Date</th><th>Status</th>
   <th>Last Change Date</th><th>Last Snapshot Date</th><th>Gap</th>
-  <th>Snapshot Type</th><th>MANDI</th>
+  <th>Snapshot Type</th><th>MANDI</th><th class="trend-hdr">Trend</th>
 </tr></thead>
 <tbody>
 {"".join(s4_row(row) for _, row in sec4.iterrows()) if len(sec4) > 0
- else '<tr><td colspan="14" class="empty-state">All active projects have up-to-date FELIPE snapshots.</td></tr>'}
+ else '<tr><td colspan="15" class="empty-state">All active projects have up-to-date FELIPE snapshots.</td></tr>'}
 </tbody>
 </table>
 </div>
@@ -1391,4 +1541,4 @@ document.addEventListener('DOMContentLoaded', () => {{
 </body>
 </html>'''
 
-    return html
+    return html, _snap_json_out
