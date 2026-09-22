@@ -55,6 +55,28 @@ _SAP_SVG = (
 _CBR = 'Contract Baseline Total Revenue before Re-allocation'
 _REGULATED = {'A&D', 'Federal', 'State&Local'}
 
+# CBS Team list (first-two-word keys, lowered, for fuzzy match after normalization)
+_CBS_TEAM_NAMES = {
+    'Fernanda Aviles', 'Tanya Cisneros', 'Santiago Ferro', 'Sofia Galvan',
+    'Rebecka Jimenez', 'Salvador Lopez', 'Franco Ortelli', 'Jorge Padilla',
+    'Rodrigo Reyes', 'Gerardo Ruiz', 'Almudena Sanz', 'Estefania Villanueva',
+    'Valia Zavala',
+}
+# Build a set of (first, last) lower-cased keys for matching longer normalized names
+_CBS_TEAM_KEYS = {
+    tuple(n.lower().split()[:2]) for n in _CBS_TEAM_NAMES
+}
+
+
+def _is_cbs_team(name):
+    """Return True if *name* belongs to the CBS analyst team."""
+    if not name or str(name).strip() in ('--', '', 'nan', 'None', '-- not in MANDI --', '-unassigned-'):
+        return False
+    parts = str(name).strip().lower().split()
+    if len(parts) < 2:
+        return False
+    return (parts[0], parts[1]) in _CBS_TEAM_KEYS
+
 
 # =============================================================================
 # SOURCE LOADER
@@ -228,6 +250,12 @@ def _run_pipeline(df_si, df_m, df_r, df_l, TODAY):
     df['Portfolio_Segment'] = df['Managed Portfolio'].map(
         {'Yes': 'Managed by CBS', 'No': 'SPOT Projects'}
     ).fillna('Other')
+    df['_mp_val'] = df['Managed Portfolio'].map(
+        {'Yes': 'Yes', 'No': 'No'}
+    ).fillna('--')
+    df['_team'] = df['CBS_Responsible'].apply(
+        lambda x: 'CBS' if _is_cbs_team(x) else 'APM'
+    )
 
     # Leakage join
     dl = df_l.copy()
@@ -757,9 +785,9 @@ def build_tracker(
         if 'ICO' in s or 'CR in' in s: return badge(s, 'blue')
         return f'<span class="badge badge-gray">{s}</span>'
 
-    def table_row(*cells, cls='', mu='', seg='', resp='', size='', lc='', numval=''):
+    def table_row(*cells, cls='', mu='', seg='', resp='', size='', lc='', numval='', team=''):
         da = (f' data-mu="{mu}" data-seg="{seg}" data-resp="{resp}"'
-              f' data-size="{size}" data-lc="{lc}"') if mu else ''
+              f' data-size="{size}" data-lc="{lc}" data-team="{team}"') if mu else ''
         if numval != '':
             da += f' data-numval="{numval}"'
         tds = ''.join(f'<td>{c}</td>' for c in cells)
@@ -797,6 +825,8 @@ def build_tracker(
         mu_val   = _ss(row.get('Bucket', ''))
         seg_val  = _ss(row.get('Portfolio_Segment', ''))
         resp_val = _ss(row.get('CBS_Responsible', '--'))
+        mp_val   = _ss(row.get('_mp_val', '--'))
+        team_val = row.get('_team', 'APM')
         size_val = 'lt1.5m' if _sf(row.get(CBR, 0)) < 1_500_000 else 'ge1.5m'
         lc_val   = _ss(row.get('Project Lifecycle Status', ''))
         cls      = ('row-red' if row.get('MANDI_Status') == 'R'
@@ -812,7 +842,7 @@ def build_tracker(
             f'<span class="proj-desc" title="{_ss(row.get("Project Description", ""), 100)}">'
             f'{_ss(row.get("Project Description", ""), 35)}</span>',
             _ss(row.get('Customer', '--'), 30),
-            mu_val, resp_val,
+            mu_val, mp_val, resp_val,
             status_badge(row.get('MANDI_Status', '--')),
             f'<span class="sms-{sms.lower()}">{sms}</span>',
             _fmt_usd(row.get(CBR, 0)),
@@ -821,7 +851,7 @@ def build_tracker(
             _ss(sc_val, 35),
             cb, rc,
             _trend_dots_project(_history_weeks, row['Project'], 1),
-            cls=cls, mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val,
+            cls=cls, mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val, team=team_val,
         )
 
     def s2_row(row):
@@ -832,6 +862,8 @@ def build_tracker(
         mu_val   = _ss(row.get('Bucket', ''))
         seg_val  = _ss(row.get('Portfolio_Segment', ''))
         resp_val = _ss(row.get('CBS_Responsible', '--'))
+        mp_val   = _ss(row.get('_mp_val', '--'))
+        team_val = row.get('_team', 'APM')
         size_val = 'lt1.5m' if _sf(row.get(CBR, 0)) < 1_500_000 else 'ge1.5m'
         lc_val   = _ss(row.get('Project Lifecycle Status', ''))
         return table_row(
@@ -840,7 +872,7 @@ def build_tracker(
             f'<span class="proj-desc" title="{_ss(row.get("Project Description", ""), 100)}">'
             f'{_ss(row.get("Project Description", ""), 35)}</span>',
             _ss(row.get('Customer', '--'), 30),
-            mu_val, resp_val,
+            mu_val, mp_val, resp_val,
             badge(ct, 'blue'),
             _fmt_usd(row['Total_CNV']),
             f'<span class="leak-pos">{_fmt_usd(row["Pos_BL"])}</span>',
@@ -848,7 +880,7 @@ def build_tracker(
             _ss(row.get('Leak_Comment', '--'), 50),
             _fmt_date(row.get('_felipe_snap', None)),
             _trend_dots_project(_history_weeks, row['Project'], 2),
-            mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val,
+            mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val, team=team_val,
             numval=round(float(row['Pos_BL']), 2),
         )
 
@@ -860,6 +892,8 @@ def build_tracker(
         mu_val   = _ss(row.get('Bucket', ''))
         seg_val  = _ss(row.get('Portfolio_Segment', ''))
         resp_val = _ss(row.get('CBS_Responsible', '--'))
+        mp_val   = _ss(row.get('_mp_val', '--'))
+        team_val = row.get('_team', 'APM')
         size_val = 'lt1.5m' if _sf(row.get(CBR, 0)) < 1_500_000 else 'ge1.5m'
         lc_val   = _ss(row.get('Project Lifecycle Status', ''))
         return table_row(
@@ -868,7 +902,7 @@ def build_tracker(
             f'<span class="proj-desc" title="{_ss(row.get("Project Description", ""), 100)}">'
             f'{_ss(row.get("Project Description", ""), 35)}</span>',
             _ss(row.get('Customer', '--'), 30),
-            mu_val, resp_val,
+            mu_val, mp_val, resp_val,
             badge(ct, 'blue'),
             _fmt_usd(row['Total_CNV']),
             f'<span class="leak-neg">{_fmt_usd(row["Total_BL"])}</span>',
@@ -876,7 +910,7 @@ def build_tracker(
             _ss(row.get('Leak_Comment', '--'), 50),
             _fmt_date(row.get('_felipe_snap', None)),
             _trend_dots_project(_history_weeks, row['Project'], 3),
-            mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val,
+            mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val, team=team_val,
             numval=round(float(row['Total_BL']), 2),
         )
 
@@ -901,6 +935,8 @@ def build_tracker(
         mu_val   = _ss(row.get('Bucket', ''))
         seg_val  = _ss(row.get('Portfolio_Segment', ''))
         resp_val = _ss(row.get('CBS_Responsible', '--'))
+        mp_val   = _ss(row.get('_mp_val', '--'))
+        team_val = row.get('_team', 'APM')
         size_val = 'lt1.5m' if _sf(row.get(CBR, 0)) < 1_500_000 else 'ge1.5m'
         lc_val   = _ss(row.get('Project Lifecycle Status', ''))
         cls      = 'row-past-end' if past_end else ''
@@ -908,7 +944,7 @@ def build_tracker(
             f'<code class="proj-id">{_ss(row["Project"], 20)}</code>',
             so_val, sopm_val,
             _ss(row.get('Customer', '--'), 30),
-            mu_val, lc_val, resp_val,
+            mu_val, mp_val, lc_val, resp_val,
             _fmt_date(end_date),
             st_badge,
             _fmt_date(chg),
@@ -917,7 +953,7 @@ def build_tracker(
             snap_type,
             status_badge(row.get('MANDI_Status', '--')),
             _trend_dots_project(_history_weeks, row['Project'], 4),
-            cls=cls, mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val,
+            cls=cls, mu=mu_val, seg=seg_val, resp=resp_val, size=size_val, lc=lc_val, team=team_val,
         )
 
     # -- 8. UI fragments -------------------------------------------------------
@@ -1197,6 +1233,12 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
     <button class="filter-btn" id="seg-spot" onclick="setFilter('seg','SPOT Projects',this)">SPOT</button>
   </div>
   <div class="filter-group">
+    <span class="filter-label">Team</span>
+    <button class="filter-btn active" id="team-all" onclick="setFilter('team','all',this)">All</button>
+    <button class="filter-btn" id="team-cbs"  onclick="setFilter('team','CBS',this)">CBS Analysts</button>
+    <button class="filter-btn" id="team-apm"  onclick="setFilter('team','APM',this)">APMs</button>
+  </div>
+  <div class="filter-group">
     <span class="filter-label">CBS Responsible</span>
     <select class="filter-select" id="resp-select" onchange="setFilter('resp',this.value,null)">
       <option value="all">All Responsibles</option>
@@ -1248,13 +1290,13 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
 <table>
 <thead><tr>
   <th>Project ID</th><th>Sales Order</th><th>SO PM</th><th>Description</th><th>Customer</th><th>Bucket</th>
-  <th>CBS Responsible</th><th>MANDI</th><th>SAP Margin</th>
+  <th>MP</th><th>CBS Responsible</th><th>MANDI</th><th>SAP Margin</th>
   <th>CBR</th><th>EAC Margin</th>
   <th>Fixable</th><th>Standard Comment</th><th>Weeks Red</th><th>Resolved</th><th class="trend-hdr">Trend</th>
 </tr></thead>
 <tbody>
 {"".join(s1_row(row) for _, row in sec1.iterrows()) if len(sec1) > 0
- else '<tr><td colspan="16" class="empty-state">No red status projects found.</td></tr>'}
+ else '<tr><td colspan="17" class="empty-state">No red status projects found.</td></tr>'}
 </tbody>
 </table>
 </div>
@@ -1276,12 +1318,12 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
 <table>
 <thead><tr>
   <th>Project ID</th><th>Sales Order</th><th>SO PM</th><th>Description</th><th>Customer</th><th>Bucket</th>
-  <th>CBS Responsible</th><th>Contract Type</th><th>Contract Net Value</th>
+  <th>MP</th><th>CBS Responsible</th><th>Contract Type</th><th>Contract Net Value</th>
   <th>Positive Leakage</th><th>Leakage %</th><th>Comment</th><th>Last Snapshot</th><th class="trend-hdr">Trend</th>
 </tr></thead>
 <tbody>
 {"".join(s2_row(row) for _, row in sec2.iterrows()) if len(sec2) > 0
- else '<tr><td colspan="14" class="empty-state">No positive leakage projects found.</td></tr>'}
+ else '<tr><td colspan="15" class="empty-state">No positive leakage projects found.</td></tr>'}
 </tbody>
 </table>
 </div>
@@ -1303,12 +1345,12 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
 <table>
 <thead><tr>
   <th>Project ID</th><th>Sales Order</th><th>SO PM</th><th>Description</th><th>Customer</th><th>Bucket</th>
-  <th>CBS Responsible</th><th>Contract Type</th><th>Contract Net Value</th>
+  <th>MP</th><th>CBS Responsible</th><th>Contract Type</th><th>Contract Net Value</th>
   <th>Backlog Leakage</th><th>Leakage %</th><th>Comment</th><th>Last Snapshot</th><th class="trend-hdr">Trend</th>
 </tr></thead>
 <tbody>
 {"".join(s3_row(row) for _, row in sec3.iterrows()) if len(sec3) > 0
- else '<tr><td colspan="14" class="empty-state">No high negative leakage projects found.</td></tr>'}
+ else '<tr><td colspan="15" class="empty-state">No high negative leakage projects found.</td></tr>'}
 </tbody>
 </table>
 </div>
@@ -1329,14 +1371,14 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
 <div class="table-wrap">
 <table>
 <thead><tr>
-  <th>Project ID</th><th>Sales Order</th><th>SO PM</th><th>Customer</th><th>Bucket</th><th>Lifecycle</th>
+  <th>Project ID</th><th>Sales Order</th><th>SO PM</th><th>Customer</th><th>Bucket</th><th>MP</th><th>Lifecycle</th>
   <th>CBS Responsible</th><th>End Date</th><th>Status</th>
   <th>Last Change Date</th><th>Last Snapshot Date</th><th>Gap</th>
   <th>Snapshot Type</th><th>MANDI</th><th class="trend-hdr">Trend</th>
 </tr></thead>
 <tbody>
 {"".join(s4_row(row) for _, row in sec4.iterrows()) if len(sec4) > 0
- else '<tr><td colspan="15" class="empty-state">All active projects have up-to-date FELIPE snapshots.</td></tr>'}
+ else '<tr><td colspan="16" class="empty-state">All active projects have up-to-date FELIPE snapshots.</td></tr>'}
 </tbody>
 </table>
 </div>
@@ -1353,7 +1395,7 @@ th.sort-desc::after{{content:' \2193';opacity:1;color:#0070F2}}
 <script>
 const PREV_MU   = {PREV_MU_JSON};
 const PREV_DATE = '{PREV_DATE_STR}';
-const FILTERS   = {{mu:'all', seg:'all', resp:'all', size:'all', lc: new Set()}};
+const FILTERS   = {{mu:'all', seg:'all', resp:'all', size:'all', team:'all', lc: new Set()}};
 
 function setFilter(key, val, btn) {{
   FILTERS[key] = val;
@@ -1370,7 +1412,7 @@ function toggleLC(cb) {{
   applyFilters();
 }}
 function resetFilters() {{
-  FILTERS.mu = FILTERS.seg = FILTERS.resp = FILTERS.size = 'all';
+  FILTERS.mu = FILTERS.seg = FILTERS.resp = FILTERS.size = FILTERS.team = 'all';
   FILTERS.lc.clear();
   document.querySelectorAll('.filter-btn').forEach(b => {{
     b.classList.toggle('active', b.id.endsWith('-all'));
@@ -1390,12 +1432,12 @@ function fmtKPI(val) {{
   return neg ? '\u2212' + s : s;
 }}
 function applyFilters() {{
-  const {{mu, seg, resp, size, lc}} = FILTERS;
+  const {{mu, seg, resp, size, team, lc}} = FILTERS;
   const counts = {{s1:0, s2:0, s3:0, s4:0}};
   let totalVis = 0, totalAll = 0, posLeakVal = 0, negLeakVal = 0;
   document.querySelectorAll('tbody tr[data-mu]').forEach(row => {{
     const rmu=row.dataset.mu||'', rseg=row.dataset.seg||'', rrsp=row.dataset.resp||'',
-          rsz=row.dataset.size||'', rlc=row.dataset.lc||'';
+          rsz=row.dataset.size||'', rlc=row.dataset.lc||'', rtm=row.dataset.team||'';
     const sec = row.closest('.section')?.id;
     if (!sec) return;
     totalAll++;
@@ -1404,6 +1446,7 @@ function applyFilters() {{
       (seg==='all'||rseg===seg) &&
       (resp==='all'||rrsp===resp) &&
       (size==='all'||rsz===size) &&
+      (team==='all'||rtm===team) &&
       (lc.size===0||lc.has(rlc));
     row.style.display = show ? '' : 'none';
     if (show) {{
@@ -1431,7 +1474,7 @@ function applyFilters() {{
   upd('kv-neg-v', fmtKPI(negLeakVal));
   upd('kv-stale', counts.s4||0);
   if (PREV_DATE) updateDeltaPills(mu, posLeakVal, negLeakVal);
-  const activeCount = (mu!=='all'?1:0)+(seg!=='all'?1:0)+(resp!=='all'?1:0)+(size!=='all'?1:0)+(lc.size>0?1:0);
+  const activeCount = (mu!=='all'?1:0)+(seg!=='all'?1:0)+(resp!=='all'?1:0)+(size!=='all'?1:0)+(team!=='all'?1:0)+(lc.size>0?1:0);
   const badge = document.getElementById('active-badge');
   if (badge) {{
     badge.textContent = activeCount > 0 ? `${{activeCount}} filter${{activeCount>1?'s':''}} active` : '';
