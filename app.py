@@ -372,7 +372,7 @@ Upload the snapshot from your last build to see trend dots on every KPI card and
         t_progress = st.progress(0, text="Starting build...")
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            import build_tracker_core
+            import build_tracker_core  # noqa: E402
 
             t_progress.progress(10, text="Reading current-week files...")
             si_bytes  = u_si.getvalue()
