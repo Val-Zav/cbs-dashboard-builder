@@ -156,6 +156,43 @@ def _fmt_date(v):
 
 
 # =============================================================================
+# NAME NORMALISATION
+# =============================================================================
+def _normalize_responsible(series):
+    """Unify CBS Responsible name variants.
+
+    Groups names by their first two words (case-insensitive) and maps every
+    short variant to the longest form found in the data, e.g.:
+        'Almudena Sanz' + 'Almudena Sanz Sakar'  ->  'Almudena Sanz Sakar'
+    """
+    _skip = {'--', '', '-- not in MANDI --', '-unassigned-', 'nan', 'None'}
+    names = [
+        str(n).strip()
+        for n in series.dropna().unique()
+        if str(n).strip() not in _skip
+    ]
+    # Group by first two words (lowered)
+    groups = {}
+    for name in names:
+        parts = name.split()
+        if len(parts) >= 2:
+            key = (parts[0].lower(), parts[1].lower())
+        else:
+            continue
+        groups.setdefault(key, []).append(name)
+    # Canonical = longest variant per group
+    alias = {}
+    for _key, variants in groups.items():
+        canonical = max(variants, key=len)
+        for v in variants:
+            if v != canonical:
+                alias[v] = canonical
+    if not alias:
+        return series
+    return series.map(lambda x: alias.get(str(x).strip(), x) if pd.notna(x) else x)
+
+
+# =============================================================================
 # DATA PIPELINE
 # =============================================================================
 def _run_pipeline(df_si, df_m, df_r, df_l, TODAY):
@@ -184,6 +221,7 @@ def _run_pipeline(df_si, df_m, df_r, df_l, TODAY):
     mandi = mandi.drop_duplicates(subset='Project', keep='first')
     df = df.merge(mandi, on='Project', how='left')
     df['CBS_Responsible'] = df['CBS_Responsible'].fillna('-- not in MANDI --')
+    df['CBS_Responsible'] = _normalize_responsible(df['CBS_Responsible'])
     df['MANDI_Status']    = df['MANDI_Status'].fillna('--')
     if 'SO_PM' not in df.columns:
         df['SO_PM'] = '--'
@@ -365,6 +403,8 @@ def _run_baseline_pipeline(bsi, bm, br, bl, ref_today):
     mandi_b = mandi_b.drop_duplicates(subset='Project', keep='first')
     b = b.merge(mandi_b, on='Project', how='left')
     b['MANDI_Status'] = b['MANDI_Status'].fillna('--')
+    if 'CBS_Responsible' in b.columns:
+        b['CBS_Responsible'] = _normalize_responsible(b['CBS_Responsible'])
 
     bl2 = bl.copy()
     bl2['BL']  = pd.to_numeric(bl2.get('Backlog Leakage',   0), errors='coerce').fillna(0)
