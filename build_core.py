@@ -161,6 +161,8 @@ tr:hover td{background:#F8F9FF}
 .rr-bk-filter .toggle-btn{font-size:10px;padding:4px 10px}
 /* BADGES */
 .badge{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap}
+.tag-cell{display:flex;flex-wrap:wrap;gap:3px;max-width:180px}
+.tag-pill{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;background:#EEF2FF;color:#0034A0;border:1px solid #D0D8F0;white-space:nowrap}
 .b-r{background:#BB0000}.b-o{background:#E66000}.b-g{background:#107F3E}
 .b-y{background:#B8860B}.b-na{background:#8396A8}.b-cbs{background:#0034A0}
 .b-spot{background:#5D6A73}
@@ -336,7 +338,7 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
           <th>Project</th><th>Sales Order</th><th>Customer</th><th>Bucket</th>
           <th>Segment</th><th>Delivery Status</th>
           <th>CBR</th><th>EAC Revenue</th><th>EAC Margin %</th>
-          <th>Overall Status</th><th>Leakage</th><th>Red Wks</th>
+          <th>Overall Status</th><th>Leakage</th><th>Red Wks</th><th>Tags</th>
         </tr></thead>
         <tbody id="projTbody"></tbody>
       </table>
@@ -1065,9 +1067,10 @@ function renderProjTable(){
       <td><span class="badge" style="background:${stBg[p.st]||'#8396A8'}">${p.st}</span></td>
       <td><span class="badge" style="background:${lsBg[p.ls]||'#8396A8'}">${p.ls}</span></td>
       <td style="text-align:center">${p.rrc>0?'<span class="badge" style="background:'+(p.rrc>=50?'#BB0000':p.rrc>=20?'#E66000':p.rrc>=10?'#B8860B':'#4CB1FF')+'">'+p.rrc+'</span>':'-'}</td>
+      <td><span class="tag-cell" title="${p.tags}">${p.tags?p.tags.split(';').map(t=>'<span class=tag-pill>'+t.trim()+'</span>').join(' '):''}</span></td>
     </tr>`).join('');
   if(rows.length>200){
-    document.getElementById('projTbody').innerHTML+=`<tr><td colspan="12" style="text-align:center;color:#8396A8;padding:10px;">Showing first 200 of ${fmtN(rows.length)} rows — apply filters to narrow results</td></tr>`;
+    document.getElementById('projTbody').innerHTML+=`<tr><td colspan="13" style="text-align:center;color:#8396A8;padding:10px;">Showing first 200 of ${fmtN(rows.length)} rows — apply filters to narrow results</td></tr>`;
   }
 }
 
@@ -1415,15 +1418,25 @@ def build(si_path, mandi_path, red_path, leak_path):
     df_si['Portfolio_Segment']=df_si[CBR].apply(
         lambda x:'Managed by CBS' if pd.notna(x) and x>=150_000 else 'SPOT Projects')
     
-    # ── MANDI JOIN (add LoS) ───────────────────────────────────────────────────
-    mandi=df_m[['ID','Responsible','SO PM','Overall Status','LoS']].copy()
-    mandi.columns=['Project','CBS_Responsible','SO_PM','MANDI_Status','LoS']
+    # ── MANDI JOIN (add LoS, Tags) ──────────────────────────────────────────────
+    _mandi_cols = ['ID','Responsible','SO PM','Overall Status','LoS']
+    if 'Tags' in df_m.columns:
+        _mandi_cols.append('Tags')
+    mandi=df_m[_mandi_cols].copy()
+    _col_map = {'ID':'Project','Responsible':'CBS_Responsible','SO PM':'SO_PM',
+                'Overall Status':'MANDI_Status','LoS':'LoS','Tags':'Tags'}
+    mandi.columns=[_col_map.get(c,c) for c in mandi.columns]
     mandi['MANDI_Status']=mandi['MANDI_Status'].map({'G':'Green','Y':'Yellow','R':'Red'}).fillna('Unknown')
     mandi['LoS']=mandi['LoS'].fillna('Professional Services')
+    if 'Tags' in mandi.columns:
+        mandi['Tags']=mandi['Tags'].fillna('').astype(str).str.replace('-not available-','',regex=False).str.strip(';').str.strip()
     df_main=df_si.merge(mandi,on='Project',how='left')
     df_main['CBS_Responsible']=df_main['CBS_Responsible'].fillna('-unassigned-')
     df_main['SO_PM']=df_main['SO_PM'].fillna('-unassigned-')
     df_main['LoS']=df_main['LoS'].fillna('Professional Services')
+    if 'Tags' not in df_main.columns:
+        df_main['Tags']=''
+    df_main['Tags']=df_main['Tags'].fillna('')
     
     # ── LEAKAGE ────────────────────────────────────────────────────────────────
     df_l=df_l.copy()
@@ -1566,6 +1579,7 @@ def build(si_path, mandi_path, red_path, leak_path):
             'ir':fi(row,'Item_Red'),'io':fi(row,'Item_Orange'),'ig':fi(row,'Item_Green'),
             'rrc':int(row['Red_Report_Count']),'isc':int(row['Issue_Solved_Count']),
             'sms':ss(row['SAP_Margin_Status']),'pmr':ss(row['PMR']),
+            'tags':ss(row['Tags'],80),
         })
     
     resp_counts=df_main['CBS_Responsible'].value_counts().reset_index()
