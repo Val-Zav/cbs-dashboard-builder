@@ -2,7 +2,7 @@
 <html lang="en" xmlns:mso="urn:schemas-microsoft-com:office:office" xmlns:msdt="uuid:C2F41010-65B3-11d1-A29F-00AA00C14882">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CBS Portfolio Dashboard</title>
+<title>CBS Dashboard Public</title>
 <script>/*!
  * Chart.js v4.5.1
  * https://www.chartjs.org
@@ -127,7 +127,6 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
 <mso:CustomDocumentProperties>
 <mso:_ApprovalStatus msdt:dt="string">0</mso:_ApprovalStatus>
 <mso:_ApprovalAssignedTo msdt:dt="string"></mso:_ApprovalAssignedTo>
-<mso:_ApprovalSentBy msdt:dt="string"></mso:_ApprovalSentBy>
 <mso:_ApprovalRespondedBy msdt:dt="string"></mso:_ApprovalRespondedBy>
 </mso:CustomDocumentProperties>
 </xml><![endif]-->
@@ -167,7 +166,7 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
 </svg></div>
     <div class="hdr-sep"></div>
     <div class="hdr-title">
-      <h1>CBS Portfolio Dashboard</h1>
+      <h1>CBS Dashboard Public<br><span style="font-size:0.75rem;font-weight:300;opacity:0.85">No Personal Data</span></h1>
       <p>North America &bull; End Date &ge; Jun 28, 2026 &bull; Updated: Sep 28, 2026</p>
     </div>
   </div>
@@ -177,8 +176,7 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
       <button class="toggle-btn active" onclick="setPortfolio('all',this)">Total Portfolio</button>
       <button class="toggle-btn"        onclick="setPortfolio('managed',this)">Managed Portfolio</button>
     </div>
-    <span class="ctrl-label">Project Responsible</span>
-    <select id="respSel" onchange="setResponsible(this.value)"><option value="All">All</option></select>
+    
   </div>
 </header>
 
@@ -196,7 +194,7 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
     <div class="intro-hdr">
       <div class="intro-accent"></div>
       <div>
-        <div class="intro-title">CBS Portfolio Dashboard &mdash; North America</div>
+        <div class="intro-title">CBS Dashboard Public &mdash; North America</div>
         <div class="intro-sub">
           <span>Maintained by the CBS Delivery Operations team</span>
           <span class="intro-sub-dot"></span>
@@ -375,7 +373,6 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
         <th class="sortable-th" onclick="sortLeakTable('id',this)" style="cursor:pointer;user-select:none">Project <span class="sort-arrow" id="sa-id">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('desc',this)" style="cursor:pointer;user-select:none">Description <span class="sort-arrow" id="sa-desc">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('bk',this)" style="cursor:pointer;user-select:none">Bucket <span class="sort-arrow" id="sa-bk">&#8597;</span></th>
-        <th class="sortable-th" onclick="sortLeakTable('resp',this)" style="cursor:pointer;user-select:none">Project Responsible <span class="sort-arrow" id="sa-resp">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('ct',this)" style="cursor:pointer;user-select:none">Contract Type <span class="sort-arrow" id="sa-ct">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('ls',this)" style="cursor:pointer;user-select:none">Status <span class="sort-arrow" id="sa-ls">&#8597;</span></th>
         <th class="sortable-th" onclick="sortLeakTable('cnv',this)" style="cursor:pointer;user-select:none">Contract Net Value <span class="sort-arrow" id="sa-cnv">&#8597;</span></th>
@@ -449,8 +446,6 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
       <th class="sortable-th" onclick="sortRecidTable('id',this)" style="cursor:pointer;user-select:none">Project <span class="sort-arrow" id="rsa-id">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('cust',this)" style="cursor:pointer;user-select:none">Customer <span class="sort-arrow" id="rsa-cust">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('bk',this)" style="cursor:pointer;user-select:none">Bucket <span class="sort-arrow" id="rsa-bk">&#8597;</span></th>
-      <th class="sortable-th" onclick="sortRecidTable('resp',this)" style="cursor:pointer;user-select:none">Project Responsible <span class="sort-arrow" id="rsa-resp">&#8597;</span></th>
-      <th class="sortable-th" onclick="sortRecidTable('sopm',this)" style="cursor:pointer;user-select:none">SO PM <span class="sort-arrow" id="rsa-sopm">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('st',this)" style="cursor:pointer;user-select:none">Overall Status <span class="sort-arrow" id="rsa-st">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('fix',this)" style="cursor:pointer;user-select:none">Fix Status <span class="sort-arrow" id="rsa-fix">&#8597;</span></th>
       <th class="sortable-th" onclick="sortRecidTable('sc',this)" style="cursor:pointer;user-select:none">Standard Comment <span class="sort-arrow" id="rsa-sc">&#8597;</span></th>
@@ -1142,7 +1137,6 @@ function updateLA(data){
       <td><code>${p.id}</code></td>
       <td title="${p.desc}">${p.desc.substring(0,35)}${p.desc.length>35?'…':''}</td>
       <td>${p.bk}</td>
-      <td>${p.resp}</td>
       <td><span class="badge" style="background:${ctBg[p.ct]||'#8396A8'}">${p.ct}</span></td>
       <td><span class="badge" style="background:${lsBg2[p.ls]}">${p.ls}</span></td>
       <td style="text-align:right;color:#1D2D3E">${fmtUSD(p.cnv)}</td>
@@ -1268,7 +1262,7 @@ function updateRR(data){
     <tr>
       <td><code>${p.id}</code></td>
       <td style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${p.cust}">${p.cust}</td>
-      <td>${p.bk}</td><td>${p.resp}</td><td>${p.sopm}</td>
+      <td>${p.bk}</td>
       <td><span class="badge" style="background:${stBg[p.st]||'#8396A8'}">${p.st}</span></td>
       <td><span class="badge" style="background:${fixBg[p.fix]||'#8396A8'};font-size:9px">${p.fix}</span></td>
       <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px" title="${p.sc}">${p.sc}</td>
@@ -1336,8 +1330,7 @@ function generateJouleRR(data,rr,latestWk,lwData){
 // ── INIT ──────────────────────────────────────────────────────────────────
 (function init(){
   // Populate Project Responsible dropdown
-  const sel=document.getElementById('respSel');
-  RESP_LIST.forEach(r=>{if(r==='All')return;const o=document.createElement('option');o.value=r;o.textContent=r;sel.appendChild(o);});
+  // CBS Responsible filter removed (public version)
   // Populate RR bucket filter buttons
   const rrBks=['All',...new Set(RED_REPORT_DATA.map(r=>r.bk))].sort();
   const rrCont=document.getElementById('rr-bk-btns');
