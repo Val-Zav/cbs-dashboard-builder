@@ -25,6 +25,16 @@ def sf(v):
         f=float(v); return 0.0 if (np.isnan(f) or np.isinf(f)) else round(f,2)
     except: return 0.0
 
+def _read_leakage(path):
+    """Read the Leakage Report Excel, preferring the 'Current' sheet.
+
+    The file may have multiple worksheets (Last Week, _Listas, Current, …).
+    Falls back to sheet index 0 so older single-sheet files still work.
+    """
+    xl = pd.ExcelFile(path)
+    sheet = 'Current' if 'Current' in xl.sheet_names else xl.sheet_names[0]
+    return xl.parse(sheet)
+
 REGULATED_BK={'Federal','A&D','State&Local','Utilities','SLED','Public Services-FAD','SI (Strategic Industries)'}
 def remap_bk(b): return 'Regulated Industries' if str(b).strip() in REGULATED_BK else str(b).strip()
 
@@ -199,6 +209,8 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
       <button class="toggle-btn active" onclick="setPortfolio('all',this)">Total Portfolio</button>
       <button class="toggle-btn"        onclick="setPortfolio('managed',this)">Managed Portfolio</button>
     </div>
+    <span class="ctrl-label">Bucket</span>
+    <select id="bkSel" onchange="setBucket(this.value)"><option value="All">All Buckets</option></select>
     <span class="ctrl-label">Project Responsible</span>
     <select id="respSel" onchange="setResponsible(this.value)"><option value="All">All</option></select>
   </div>
@@ -319,11 +331,6 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
         <option value="SPOT Projects">SPOT Projects</option>
       </select>
       <div class="flt-sep"></div>
-      <label>Bucket</label>
-      <select id="flt-bk" onchange="renderProjTable()">
-        <option value="All">All</option>
-      </select>
-      <div class="flt-sep"></div>
       <label>Contract Baseline Revenue</label>
       <div class="cbr-toggle">
         <button class="cbr-btn active" id="cbr-all"  onclick="setCBR('all',this)">All</button>
@@ -350,11 +357,6 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
 <div id="tab-la" class="tab-panel">
   <div class="sec">
     <p class="sec-title">Leakage Analysis — Sales Order Level</p>
-    <!-- BUCKET FILTER -->
-    <div class="rr-bk-filter" style="margin-bottom:14px">
-      <span class="ctrl-label">Bucket</span>
-      <div id="la-bk-btns" style="display:flex;flex-wrap:wrap;gap:6px"></div>
-    </div>
     <div class="tl-grid">
       <div class="tl tl-r"><div class="tl-lbl">Red — Reduce Forecasts</div><div class="tl-val" id="tl-r-n">—</div><div class="tl-sub" id="tl-r-s"></div></div>
       <div class="tl tl-o"><div class="tl-lbl">Orange — Additional Forecasting</div><div class="tl-val" id="tl-o-n">—</div><div class="tl-sub" id="tl-o-s"></div></div>
@@ -420,11 +422,6 @@ code{font-size:10px;background:#F0F4FF;padding:1px 5px;border-radius:3px;color:#
       <div class="kpi-card r"><div class="kpi-label">Latest Week Red Projects</div><div class="kpi-val" id="rr-k-lw">—</div><div class="kpi-sub" id="rr-k-lw-s"></div></div>
       <div class="kpi-card o"><div class="kpi-label">High Recidivism &ge;10 wks (2026)</div><div class="kpi-val" id="rr-k-hi">—</div><div class="kpi-sub">Persistent issues in 2026</div></div>
       <div class="kpi-card g"><div class="kpi-label">Resolved Projects (2026)</div><div class="kpi-val" id="rr-k-isc">—</div><div class="kpi-sub" id="rr-k-isc-s"></div></div>
-    </div>
-    <!-- BUCKET FILTER -->
-    <div class="rr-bk-filter">
-      <span class="ctrl-label">Bucket</span>
-      <div id="rr-bk-btns" style="display:flex;flex-wrap:wrap;gap:6px"></div>
     </div>
   </div>
 
@@ -492,9 +489,8 @@ const ALL_WEEKS       = [...new Set(RED_REPORT_DATA.map(r=>r.wk))].sort();
 
 let portfolioFilter  = 'all';
 let responsibleFilter= 'All';
+let bucketFilter     = 'All';
 let cbrFilter        = 'all';
-let rrBucketFilter   = 'All';
-let laBucketFilter   = 'All';
 let laSortCol        = 'lv';   // default sort: total leakage descending
 let laSortDir        = 'desc';
 let rrSortCol        = 'rrc';  // default sort: red weeks descending
@@ -514,19 +510,8 @@ function setPortfolio(v,btn){
   document.querySelectorAll('.toggle-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active'); updateDashboard();
 }
+function setBucket(v){ bucketFilter=v; updateDashboard(); }
 function setResponsible(v){ responsibleFilter=v; updateDashboard(); }
-function setRRBucket(v,btn){
-  rrBucketFilter=v;
-  document.querySelectorAll('.rr-bk-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  const data=filtered(); updateRR(data);
-}
-function setLABucket(v,btn){
-  laBucketFilter=v;
-  document.querySelectorAll('.la-bk-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  updateLA(filteredLA());
-}
 function sortLeakTable(col,th){
   if(laSortCol===col){ laSortDir=laSortDir==='asc'?'desc':'asc'; }
   else { laSortCol=col; laSortDir=col==='bk'?'asc':'desc'; }
@@ -548,6 +533,7 @@ function filtered(){
   return PROJECT_DATA.filter(p=>{
     if(portfolioFilter==='managed'&&p.mp!=='Yes') return false;
     if(responsibleFilter!=='All'&&p.resp!==responsibleFilter) return false;
+    if(bucketFilter!=='All'&&p.bk!==bucketFilter) return false;
     // Exclude blank-customer Regulated Industries records with zero Contract Value
     if(!p.cust && p.bk==='Regulated Industries' && p.cbr===0) return false;
     return true;
@@ -558,15 +544,12 @@ function filteredRR(){
   return RED_REPORT_DATA.filter(r=>{
     if(!ids.has(r.proj)) return false;
     if(portfolioFilter==='managed'&&r.mp!=='Yes') return false;
-    if(rrBucketFilter!=='All'&&r.bk!==rrBucketFilter) return false;
+    if(bucketFilter!=='All'&&r.bk!==bucketFilter) return false;
     return true;
   });
 }
 function filteredLA(){
-  return filtered().filter(p=>{
-    if(laBucketFilter!=='All'&&p.bk!==laBucketFilter) return false;
-    return true;
-  });
+  return filtered();
 }
 
 // ── TABLE FILTERS ─────────────────────────────────────────────────────────
@@ -578,11 +561,9 @@ function setCBR(v,btn){
 function filteredTable(){
   const dl  =document.getElementById('flt-dl').value;
   const seg =document.getElementById('flt-seg').value;
-  const bk  =document.getElementById('flt-bk').value;
   return filtered().filter(p=>{
     if(dl!=='All'&&p.dl!==dl)   return false;
     if(seg!=='All'&&p.seg!==seg) return false;
-    if(bk!=='All'&&p.bk!==bk)   return false;
     if(cbrFilter==='high'&&p.cbr<=1_500_000) return false;
     if(cbrFilter==='low' &&p.cbr>1_500_000)  return false;
     return true;
@@ -837,10 +818,6 @@ function initCharts(){
               y:{grid:{color:'#F0F2F5'},ticks:{font:{size:10}},border:{display:false}}}}
   });
 
-  // init bucket filter dropdown
-  const bks=[...new Set(PROJECT_DATA.map(p=>p.bk))].sort();
-  const bkSel=document.getElementById('flt-bk');
-  bks.forEach(bk=>{const o=document.createElement('option');o.value=bk;o.textContent=bk;bkSel.appendChild(o);});
 }
 
 // ── MAIN UPDATE ───────────────────────────────────────────────────────────
@@ -1361,26 +1338,10 @@ function generateJouleRR(data,rr,latestWk,lwData){
   // Populate Project Responsible dropdown
   const sel=document.getElementById('respSel');
   RESP_LIST.forEach(r=>{if(r==='All')return;const o=document.createElement('option');o.value=r;o.textContent=r;sel.appendChild(o);});
-  // Populate RR bucket filter buttons
-  const rrBks=['All',...new Set(RED_REPORT_DATA.map(r=>r.bk))].sort();
-  const rrCont=document.getElementById('rr-bk-btns');
-  rrBks.forEach(bk=>{
-    const btn=document.createElement('button');
-    btn.className='toggle-btn rr-bk-btn'+(bk==='All'?' active':'');
-    btn.textContent=bk; btn.style.fontSize='10px'; btn.style.padding='4px 10px';
-    btn.onclick=function(){setRRBucket(bk,this);};
-    rrCont.appendChild(btn);
-  });
-  // Populate LA bucket filter buttons
-  const laBks=['All',...new Set(PROJECT_DATA.map(p=>p.bk))].sort();
-  const laCont=document.getElementById('la-bk-btns');
-  laBks.forEach(bk=>{
-    const btn=document.createElement('button');
-    btn.className='toggle-btn la-bk-btn'+(bk==='All'?' active':'');
-    btn.textContent=bk; btn.style.fontSize='10px'; btn.style.padding='4px 10px';
-    btn.onclick=function(){setLABucket(bk,this);};
-    laCont.appendChild(btn);
-  });
+  // Populate global Bucket dropdown
+  const bks=[...new Set(PROJECT_DATA.map(p=>p.bk))].sort();
+  const bkSel=document.getElementById('bkSel');
+  bks.forEach(bk=>{const o=document.createElement('option');o.value=bk;o.textContent=bk;bkSel.appendChild(o);});
   initCharts();
   updateDashboard();
 })();
@@ -1398,7 +1359,7 @@ def build(si_path, mandi_path, red_path, leak_path):
     df_si=pd.read_excel(si_path)
     df_m =pd.read_excel(mandi_path)
     df_r =pd.read_excel(red_path)
-    df_l =pd.read_excel(leak_path)
+    df_l =_read_leakage(leak_path)
 
     # Dynamic cutoff: latest Red Report date − 3 months
     _latest_rr  = pd.to_datetime(df_r['Reviewed'], errors='coerce').max()

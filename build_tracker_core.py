@@ -95,6 +95,32 @@ def _load_src(src, sheet=0):
     return pd.read_excel(str(src), sheet_name=sheet)
 
 
+def _load_leakage(src):
+    """Load the Leakage Report, preferring the 'Current' sheet.
+
+    The file now has multiple worksheets (Last Week, _Listas, Current, …).
+    This helper targets 'Current' when present and falls back to sheet 0
+    so older single-sheet files still work without changes.
+    """
+    if src is None:
+        raise ValueError("Leakage source file must not be None.")
+
+    # Resolve raw bytes → BytesIO so we can open it twice (sheet probe + read)
+    if isinstance(src, (bytes, bytearray)):
+        buf = io.BytesIO(src)
+    elif hasattr(src, 'read'):
+        if hasattr(src, 'seek'):
+            src.seek(0)
+        buf = io.BytesIO(src.read())
+    else:
+        buf = str(src)
+
+    # Check available sheets
+    xl = pd.ExcelFile(buf)
+    sheet = 'Current' if 'Current' in xl.sheet_names else xl.sheet_names[0]
+    return xl.parse(sheet)
+
+
 # =============================================================================
 # BUSINESS-DAY HELPERS
 # =============================================================================
@@ -652,7 +678,7 @@ def build_tracker(
     df_si = _load_src(si_src)
     df_m  = _load_src(m_src)
     df_r  = _load_src(r_src, sheet=0)
-    df_l  = _load_src(l_src)
+    df_l  = _load_leakage(l_src)
 
     # -- 3. Pipeline -----------------------------------------------------------
     df, sec1, sec2, sec3, sec4, ALL_MUS, LATEST_RR_DATE = _run_pipeline(
@@ -698,7 +724,7 @@ def build_tracker(
         bsi = _load_src(baseline_si_src)
         bm  = _load_src(baseline_m_src)
         br  = _load_src(baseline_r_src, sheet=0)
-        bl  = _load_src(baseline_l_src)
+        bl  = _load_leakage(baseline_l_src)
         _PREV_MU_RAW = _run_baseline_pipeline(bsi, bm, br, bl, b_today)
         PREV_DATE_STR = b_today.strftime('%b %-d')
     else:
