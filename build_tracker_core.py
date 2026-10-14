@@ -209,9 +209,12 @@ def _fmt_date(v):
 def _normalize_responsible(series):
     """Unify CBS Responsible name variants.
 
-    Groups names by their first two words (case-insensitive) and maps every
-    short variant to the longest form found in the data, e.g.:
-        'Almudena Sanz' + 'Almudena Sanz Sakar'  ->  'Almudena Sanz Sakar'
+    Uses a word-subset algorithm: if all words in name A appear in name B,
+    A is a shorter variant and is mapped to B (longest canonical form).
+    Example:
+        'Franco Ortelli'       -> 'Franco Andres Ortelli'
+        'Estefania Villanueva' -> 'Estefania Villanueva Morales'
+        'Fernanda Aviles Leon' -> 'Maria Fernanda Aviles Leon'
     """
     _skip = {'--', '', '-- not in MANDI --', '-unassigned-', 'nan', 'None'}
     names = [
@@ -219,22 +222,17 @@ def _normalize_responsible(series):
         for n in series.dropna().unique()
         if str(n).strip() not in _skip
     ]
-    # Group by first two words (lowered)
-    groups = {}
-    for name in names:
-        parts = name.split()
-        if len(parts) >= 2:
-            key = (parts[0].lower(), parts[1].lower())
-        else:
-            continue
-        groups.setdefault(key, []).append(name)
-    # Canonical = longest variant per group
+    names_sorted = sorted(set(names), key=lambda x: len(x.split()))
     alias = {}
-    for _key, variants in groups.items():
-        canonical = max(variants, key=len)
-        for v in variants:
-            if v != canonical:
-                alias[v] = canonical
+    for i, a in enumerate(names_sorted):
+        wa = set(a.lower().split())
+        if len(wa) < 2:
+            continue
+        for b in names_sorted[i + 1:]:
+            wb = set(b.lower().split())
+            if wa.issubset(wb):
+                alias[a] = alias.get(b, b)
+                break
     if not alias:
         return series
     return series.map(lambda x: alias.get(str(x).strip(), x) if pd.notna(x) else x)

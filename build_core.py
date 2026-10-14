@@ -25,6 +25,40 @@ def sf(v):
         f=float(v); return 0.0 if (np.isnan(f) or np.isinf(f)) else round(f,2)
     except: return 0.0
 
+def _normalize_responsible(series):
+    """Unify CBS Responsible name variants.
+
+    Groups names using a word-subset algorithm: if all words in name A
+    appear in name B, A is considered a shorter variant and is mapped to B.
+    Example:
+        'Franco Ortelli'  -> 'Franco Andres Ortelli'
+        'Estefania Villanueva' -> 'Estefania Villanueva Morales'
+        'Fernanda Aviles Leon' -> 'Maria Fernanda Aviles Leon'
+    Maps every short variant to the longest canonical form found in the data.
+    """
+    _skip = {'--', '', '-unassigned-', 'nan', 'None'}
+    names = [
+        str(n).strip()
+        for n in series.dropna().unique()
+        if str(n).strip() not in _skip
+    ]
+    # Sort by word count so shorter names come first
+    names_sorted = sorted(set(names), key=lambda x: len(x.split()))
+    alias = {}
+    for i, a in enumerate(names_sorted):
+        wa = set(a.lower().split())
+        if len(wa) < 2:
+            continue
+        for b in names_sorted[i + 1:]:
+            wb = set(b.lower().split())
+            if wa.issubset(wb):
+                # Map a to the canonical of b (handles chains like A->B->C)
+                alias[a] = alias.get(b, b)
+                break
+    if not alias:
+        return series
+    return series.map(lambda x: alias.get(str(x).strip(), x) if pd.notna(x) else x)
+
 def _read_leakage(path):
     """Read the Leakage Report Excel, preferring the 'Current' sheet.
 
@@ -930,16 +964,16 @@ function generateJouleLA(data){
   const lR=wL.filter(p=>p.ls==='Red');
   const lO=wL.filter(p=>p.ls==='Orange');
   const lG=wL.filter(p=>p.ls==='Green');
-  const posLeak=data.filter(p=>p.lv>0).reduce((s,p)=>s+p.lv,0);
+  const posLeak=data.filter(p=>p.ls==='Red').reduce((s,p)=>s+p.plv,0);
   const redPct=lR.length/wL.length*100;
 
   insights.push({cls:redPct>20?'alert':redPct>10?'warn':'good',
     title:'Leakage Severity',metric:lR.length+' Red',
     text:`${lR.length} projects (${redPct.toFixed(1)}%) require immediate forecast reduction. ${lO.length} Orange need additional forecasting. ${lG.length} Green require no action.`});
 
-  insights.push({cls:posLeak>2e6?'alert':posLeak>500e3?'warn':'good',
+  insights.push({cls:posLeak>10e6?'alert':posLeak>2e6?'warn':'good',
     title:'Revenue at Risk',metric:fmtUSD(posLeak),
-    text:`Total positive leakage across ${lR.length} Red projects is ${fmtUSD(posLeak)}. This represents direct revenue that must be addressed in the current reporting cycle.`});
+    text:`Total positive leakage (gross) across ${lR.length} Red projects is ${fmtUSD(posLeak)}. This represents the sum of all positive backlog items and must be addressed in the current reporting cycle.`});
 
   const bkRed={};
   lR.forEach(p=>{bkRed[p.bk]=(bkRed[p.bk]||0)+1;});
@@ -1007,7 +1041,7 @@ function generateJoulePA(data){
 
   // At-risk revenue (leakage)
   const leakRed=data.filter(p=>p.ls==='Red');
-  const leakUSD=leakRed.reduce((s,p)=>s+p.lv,0);
+  const leakUSD=leakRed.reduce((s,p)=>s+p.plv,0);
   insights.push({cls:leakRed.length>20?'alert':leakRed.length>10?'warn':'good',
     title:'Revenue at Risk (Leakage)',metric:fmtUSD(Math.max(leakUSD,0)),
     text:`${leakRed.length} projects have Red leakage status. ${data.filter(p=>p.ls==='Orange').length} are Orange. Total positive leakage: ${fmtUSD(Math.max(leakUSD,0))}.`});
@@ -1055,7 +1089,7 @@ function renderProjTable(){
 function updateLA(data){
   const wL=data.filter(p=>p.ls!=='N/A');
   const lR=wL.filter(p=>p.ls==='Red').length,lO=wL.filter(p=>p.ls==='Orange').length,lG=wL.filter(p=>p.ls==='Green').length;
-  const posLeak=data.filter(p=>p.lv>0).reduce((s,p)=>s+p.lv,0);
+  const posLeak=data.filter(p=>p.ls==='Red').reduce((s,p)=>s+p.plv,0);
 
   document.getElementById('tl-r-n').textContent=lR;
   document.getElementById('tl-r-s').textContent='projects — forecasts must be reduced';
@@ -1393,6 +1427,7 @@ def build(si_path, mandi_path, red_path, leak_path):
         mandi['Tags']=mandi['Tags'].fillna('').astype(str).str.replace('-not available-','',regex=False).str.strip(';').str.strip()
     df_main=df_si.merge(mandi,on='Project',how='left')
     df_main['CBS_Responsible']=df_main['CBS_Responsible'].fillna('-unassigned-')
+    df_main['CBS_Responsible']=_normalize_responsible(df_main['CBS_Responsible'])
     df_main['SO_PM']=df_main['SO_PM'].fillna('-unassigned-')
     df_main['LoS']=df_main['LoS'].fillna('Professional Services')
     if 'Tags' not in df_main.columns:
