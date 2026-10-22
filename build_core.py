@@ -1699,3 +1699,243 @@ def build_public(si_path, mandi_path, red_path, leak_path):
     """
     html = build(si_path, mandi_path, red_path, leak_path)
     return _strip_personal(html)
+
+
+def build_dataset(si_path, mandi_path, red_path, leak_path):
+    """
+    Build the CBS Consolidated Dataset as Excel bytes.
+
+    Runs the full data pipeline (same joins as build()) and returns
+    an in-memory Excel file (.xlsx) as bytes, ready for st.download_button.
+
+    Returns
+    -------
+    bytes
+        Excel workbook bytes.
+    """
+    import io as _io
+    from dateutil.relativedelta import relativedelta
+
+    # ── Load ──────────────────────────────────────────────────────────────
+    df_si = pd.read_excel(si_path)
+    df_m  = pd.read_excel(mandi_path)
+    df_r  = pd.read_excel(red_path)
+    df_l  = _read_leakage(leak_path)
+
+    # ── Cutoff ────────────────────────────────────────────────────────────
+    latest_rr = pd.to_datetime(df_r['Reviewed'], errors='coerce').max()
+    cutoff    = latest_rr - relativedelta(months=3)
+    CBR       = 'Contract Baseline Total Revenue before Re-allocation'
+
+    df_si['_pfd'] = pd.to_datetime(df_si['Planned Finish Date'], errors='coerce')
+    df_si = df_si[df_si['_pfd'] >= cutoff].copy()
+    df_si['Portfolio_Segment'] = df_si[CBR].apply(
+        lambda x: 'Managed by CBS' if pd.notna(x) and x >= 150_000 else 'SPOT Projects'
+    )
+
+    # ── MANDI join ────────────────────────────────────────────────────────
+    _mc = ['ID','Responsible','SO PM','Overall Status','LoS']
+    if 'Tags' in df_m.columns: _mc.append('Tags')
+    mandi = df_m[_mc].copy()
+    mandi.columns = [{'ID':'Project','Responsible':'CBS_Responsible','SO PM':'SO_PM',
+                      'Overall Status':'MANDI_Status','LoS':'LoS','Tags':'Tags'}.get(c,c)
+                     for c in mandi.columns]
+    mandi['MANDI_Status'] = mandi['MANDI_Status'].map({'G':'Green','Y':'Yellow','R':'Red'}).fillna('Unknown')
+    mandi['LoS'] = mandi['LoS'].fillna('Professional Services')
+    if 'Tags' in mandi.columns:
+        mandi['Tags'] = mandi['Tags'].fillna('').astype(str)\
+            .str.replace('-not available-', '', regex=False).str.strip()
+    mandi = mandi.drop_duplicates(subset='Project', keep='first')
+
+    df_main = df_si.merge(mandi, on='Project', how='left')
+    df_main['CBS_Responsible'] = df_main['CBS_Responsible'].fillna('-unassigned-')
+    df_main['CBS_Responsible'] = _normalize_responsible(df_main['CBS_Responsible'])
+    df_main['SO_PM'] = df_main['SO_PM'].fillna('-unassigned-')
+    df_main['LoS']   = df_main['LoS'].fillna('Professional Services')
+    if 'Tags' not in df_main.columns: df_main['Tags'] = ''
+    df_main['Tags'] = df_main['Tags'].fillna('')
+
+    # ── Leakage join ──────────────────────────────────────────────────────
+    df_l['BL']  = pd.to_numeric(df_l['Backlog Leakage'],   errors='coerce').fillna(0)
+    df_l['CNV'] = pd.to_numeric(df_l['Contract Net Value'], errors='coerce').fillna(0)
+    df_l['ANV'] = pd.to_numeric(df_l.get('Adjusted Net Value', pd.Series(dtype=float)),
+                                errors='coerce').fillna(0)
+
+    def _ic(r):
+        bl, cnv = r['BL'], r['CNV']
+        if bl > 0: return 'Red'
+        if bl < 0:
+            return 'Orange' if (abs(bl)/abs(cnv) if cnv != 0 else 0) > 0.05 else 'Green'
+        return 'Green'
+
+    df_l['IC']   = df_l.apply(_ic, axis=1)
+    df_l['_pos'] = df_l['BL'].where(df_l['IC'] == 'Red', 0)
+    df_l['_neg'] = df_l['BL'].abs().where(df_l['IC'] == 'Orange', 0)
+    df_l['_bt']  = df_l['Initial Contract Type'].apply(
+        lambda v: {'Mix':'Mixed','T&M':'T&M','FPP':'FPP'}.get(str(v).strip(), 'Other')
+    )
+
+    def _worst(c): return 'Red' if 'Red' in list(c) else ('Orange' if 'Orange' in list(c) else 'Green')
+
+    so_agg = df_l.groupby('Sales Document Number').agg(
+        Leakage_Status = ('IC',   _worst),
+        Total_Leakage  = ('BL',   'sum'),
+        Pos_Leakage    = ('_pos', 'sum'),
+        Neg_Leakage    = ('_neg', 'sum'),
+        CNV            = ('CNV',  'sum'),
+        ANV            = ('ANV',  'sum'),
+        Red_Items      = ('IC',   lambda x: (x == 'Red').sum()),
+        Orange_Items   = ('IC',   lambda x: (x == 'Orange').sum()),
+        Contract_Type  = ('_bt',  lambda x: x.mode().iloc[0] if len(x.mode()) else '--'),
+    ).reset_index()
+
+    so_agg['SO_num']  = pd.to_numeric(so_agg['Sales Document Number'], errors='coerce')
+    df_main['SO_num'] = pd.to_numeric(df_main['Sales Order'], errors='coerce')
+    df_main = df_main.merge(
+        so_agg[['SO_num','Leakage_Status','Total_Leakage','Pos_Leakage',
+                'Neg_Leakage','CNV','ANV','Red_Items','Orange_Items','Contract_Type']],
+        on='SO_num', how='left'
+    )
+    for c in ['Total_Leakage','Pos_Leakage','Neg_Leakage','CNV','ANV','Red_Items','Orange_Items']:
+        df_main[c] = df_main[c].fillna(0)
+    df_main['Leakage_Status'] = df_main['Leakage_Status'].fillna('N/A')
+    df_main['Contract_Type']  = df_main['Contract_Type'].fillna('N/A')
+
+    # ── Red Report join ───────────────────────────────────────────────────
+    df_r['_rev'] = pd.to_datetime(df_r['Reviewed'], errors='coerce')
+    df_r_yr      = df_r[df_r['_rev'].dt.year == latest_rr.year].copy()
+
+    recur = df_r_yr.groupby('Project')['Reviewed'].nunique().reset_index()
+    recur.columns = ['Project', 'Red_Report_Count']
+    df_main = df_main.merge(recur, on='Project', how='left')
+    df_main['Red_Report_Count'] = df_main['Red_Report_Count'].fillna(0).astype(int)
+
+    rr_latest = df_r_yr.sort_values('_rev').groupby('Project').last().reset_index()
+
+    def _norm_fix(s):
+        if pd.isna(s): return 'Not Found'
+        return {
+            'not fixable':'Not Fixable','working with pm/apm':'Working with PM/APM',
+            'not found':'Not Found','rebaseline in process':'Rebaseline in Process',
+            'fixed':'Fixed','ico in process':'ICO in Process','cr in process':'CR in Process',
+        }.get(str(s).strip().lower(), str(s).strip())
+
+    rr_latest['Fixable_Norm'] = rr_latest['Fixable'].apply(_norm_fix)
+
+    rr_keep = ['Project','_rev','Fixable_Norm']
+    for c in ['Standard Comment','Intern Comments','SAP Margin Status']:
+        if c in rr_latest.columns: rr_keep.append(c)
+    rr_sub = rr_latest[rr_keep].copy()
+    rr_sub.columns = (['Project','Last_RR_Date','Fixable'] +
+                      [c.replace(' ','_') for c in rr_keep[3:]])
+    df_main = df_main.merge(rr_sub, on='Project', how='left')
+
+    issue_solved = df_r_yr[
+        df_r_yr['Intern Comments'].str.strip().str.lower() == 'issue solved'
+    ].groupby('Project')['_rev'].nunique().reset_index()
+    issue_solved.columns = ['Project', 'Issue_Solved_Count']
+    df_main = df_main.merge(issue_solved, on='Project', how='left')
+    df_main['Issue_Solved_Count'] = df_main['Issue_Solved_Count'].fillna(0).astype(int)
+
+    # ── Clean & rename ────────────────────────────────────────────────────
+    df_export = df_main.drop(
+        columns=[c for c in df_main.columns if c.startswith('_')], errors='ignore'
+    ).rename(columns={
+        'CBS_Responsible':    'CBS Responsible',
+        'SO_PM':              'SO PM',
+        'MANDI_Status':       'MANDI Overall Status',
+        'Portfolio_Segment':  'Portfolio Segment',
+        'Leakage_Status':     'Leakage Status',
+        'Total_Leakage':      'Total Leakage',
+        'Pos_Leakage':        'Positive Leakage',
+        'Neg_Leakage':        'Negative Leakage (abs)',
+        'CNV':                'Contract Net Value',
+        'ANV':                'Adjusted Net Value',
+        'Red_Items':          'Leakage Red Items',
+        'Orange_Items':       'Leakage Orange Items',
+        'Contract_Type':      'Contract Type',
+        'Red_Report_Count':   'Red Report Count',
+        'Issue_Solved_Count': 'Issue Solved Count',
+        'Last_RR_Date':       'Last Red Report Date',
+        'SO_num':             'SO Number (numeric)',
+    })
+
+    # ── Write to bytes ────────────────────────────────────────────────────
+    buf = _io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        df_export.to_excel(writer, sheet_name='CBS Dataset', index=False)
+        ws = writer.sheets['CBS Dataset']
+        for col in ws.columns:
+            max_len = max((len(str(c.value)) for c in col if c.value), default=10)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 45)
+    buf.seek(0)
+    return buf.read()
+
+
+def build_history(si_path, mandi_path, red_path, leak_path,
+                  history_src=None, snapshot_date=None):
+    """
+    Build the CBS Consolidated Dataset and append it to a cumulative history file.
+
+    Each call adds one week of row-level data (one row per active project) tagged
+    with *snapshot_date*. If a row for that date already exists it is replaced,
+    so re-running the same week is safe.
+
+    Parameters
+    ----------
+    si_path, mandi_path, red_path, leak_path
+        Current-week source files.
+    history_src : bytes | None
+        Bytes of the existing cumulative Excel from a previous build.
+        Pass None to start a new history file.
+    snapshot_date : str | None
+        ISO date string 'YYYY-MM-DD'. Defaults to today.
+
+    Returns
+    -------
+    bytes
+        Updated cumulative Excel workbook bytes.
+    int
+        Number of distinct snapshot weeks now in the file.
+    """
+    import io as _io
+    from datetime import date as _date
+
+    snap_date = snapshot_date or _date.today().isoformat()
+
+    # Get this week's dataset (reuse build_dataset pipeline)
+    week_bytes = build_dataset(si_path, mandi_path, red_path, leak_path)
+    df_new = pd.read_excel(_io.BytesIO(week_bytes))
+    df_new.insert(0, 'Snapshot Date', snap_date)
+
+    # Merge with existing history
+    if history_src:
+        raw = history_src if isinstance(history_src, (bytes, bytearray)) else history_src.read()
+        df_hist = pd.read_excel(_io.BytesIO(raw))
+        # Remove any existing rows for this snapshot_date (idempotent re-run)
+        df_hist = df_hist[df_hist['Snapshot Date'].astype(str) != snap_date]
+        df_combined = pd.concat([df_hist, df_new], ignore_index=True)
+    else:
+        df_combined = df_new
+
+    # Sort by date descending so latest week is first
+    df_combined['Snapshot Date'] = pd.to_datetime(
+        df_combined['Snapshot Date'], errors='coerce'
+    )
+    df_combined = df_combined.sort_values(
+        ['Snapshot Date', 'Project'], ascending=[False, True]
+    )
+    df_combined['Snapshot Date'] = df_combined['Snapshot Date'].dt.strftime('%Y-%m-%d')
+
+    n_weeks = df_combined['Snapshot Date'].nunique()
+
+    # Write to bytes
+    buf = _io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+        df_combined.to_excel(writer, sheet_name='CBS History', index=False)
+        ws = writer.sheets['CBS History']
+        for col in ws.columns:
+            max_len = max((len(str(c.value)) for c in col if c.value), default=10)
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 45)
+    buf.seek(0)
+    return buf.read(), n_weeks

@@ -228,6 +228,26 @@ The dashboards are self-contained HTML files that anyone can open in a browser.
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # -- Historical dataset (optional) -----------------------------------------
+    with st.expander("Dataset History (optional — enables cumulative Excel)", expanded=False):
+        st.markdown(
+            "Upload the **CBS_Portfolio_History.xlsx** from your previous build to "
+            "append this week's data to the cumulative record. "
+            "Each week adds ~1,400 rows tagged with the snapshot date. "
+            "Leave empty to download only this week's standalone dataset.",
+            unsafe_allow_html=False,
+        )
+        d_hist_file = st.file_uploader(
+            "CBS_Portfolio_History.xlsx from previous build",
+            type=["xlsx"],
+            key="d_hist",
+            help="The cumulative history file downloaded last week.",
+        )
+        if d_hist_file:
+            st.success("History loaded — this week will be appended.")
+        else:
+            st.caption("No history uploaded. Only this week's dataset will be available.")
+
     d_build = st.button("Build Dashboard", disabled=not files_ready, use_container_width=True, key="d_build_btn")
 
     if d_build and files_ready:
@@ -252,12 +272,25 @@ The dashboards are self-contained HTML files that anyone can open in a browser.
                 progress.progress(20, text="Building full dashboard...")
                 html_full = build_core.build(p_si, p_ma, p_red, p_lk)
 
-                progress.progress(80, text="Building public dashboard (no personal data)...")
+                progress.progress(60, text="Building public dashboard (no personal data)...")
                 html_public = build_core.build_public(p_si, p_ma, p_red, p_lk)
+
+                progress.progress(85, text="Building consolidated Excel dataset...")
+                excel_bytes = build_core.build_dataset(p_si, p_ma, p_red, p_lk)
+
+                progress.progress(92, text="Updating history file...")
+                hist_src = d_hist_file.getvalue() if d_hist_file else None
+                hist_bytes, n_weeks = build_core.build_history(
+                    p_si, p_ma, p_red, p_lk,
+                    history_src=hist_src,
+                )
 
             progress.progress(100, text="Done.")
             st.session_state["d_html_full"]   = html_full
             st.session_state["d_html_public"] = html_public
+            st.session_state["d_excel"]       = excel_bytes
+            st.session_state["d_history"]     = hist_bytes
+            st.session_state["d_n_weeks"]     = n_weeks
             st.session_state["d_build_ok"]    = True
 
         except Exception as exc:
@@ -277,7 +310,7 @@ The dashboards are self-contained HTML files that anyone can open in a browser.
         st.markdown('<div class="result-ok">Dashboard built successfully. Download below.</div>',
                     unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        dl1, dl2 = st.columns(2)
+        dl1, dl2, dl3 = st.columns(3)
         with dl1:
             st.download_button(
                 label="Download Full Dashboard",
@@ -296,6 +329,25 @@ The dashboards are self-contained HTML files that anyone can open in a browser.
                 use_container_width=True,
                 key="d_dl_public",
             )
+        with dl3:
+            st.download_button(
+                label="Download Excel Dataset",
+                data=st.session_state["d_excel"],
+                file_name="CBS_Consolidated_Dataset.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key="d_dl_excel",
+            )
+        st.markdown("<br>", unsafe_allow_html=True)
+        n_wks = st.session_state.get("d_n_weeks", 1)
+        st.download_button(
+            label=f"Download History File ({n_wks} week{'s' if n_wks != 1 else ''} accumulated)",
+            data=st.session_state["d_history"],
+            file_name="CBS_Portfolio_History.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key="d_dl_history",
+        )
 
     st.markdown('<div class="sap-footer">CBS Portfolio Operations &bull; SAP</div>',
                 unsafe_allow_html=True)
